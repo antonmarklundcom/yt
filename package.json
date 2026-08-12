@@ -1,0 +1,21 @@
+{
+  "name": "yt-intel",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Private YouTube research workspace — ingest videos, pull existing captions, run one structured AI analysis, store forever.",
+  "scripts": {
+    "probe:captions": "tsx scripts/probe-captions.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "youtubei.js": "^13.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=20.9.0"
+  }
+}
