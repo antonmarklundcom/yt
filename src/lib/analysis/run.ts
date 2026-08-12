@@ -12,6 +12,7 @@ import {
   type TokenUsage,
 } from "./pricing";
 import { ANALYSIS_JSON_SCHEMA, ANALYSIS_SYSTEM_PROMPT, buildUserPrompt } from "./prompt";
+import { recordSpend } from "@/lib/spend";
 
 /**
  * The analysis pipeline (PLAN.md §5 row 06): transcript -> Haiku 4.5 ->
@@ -19,7 +20,7 @@ import { ANALYSIS_JSON_SCHEMA, ANALYSIS_SYSTEM_PROMPT, buildUserPrompt } from ".
  */
 
 /** ~2,500 output tokens expected (PLAN.md §1); the headroom absorbs long videos. */
-const MAX_OUTPUT_TOKENS = 8_000;
+export const MAX_OUTPUT_TOKENS = 8_000;
 
 let cachedClient: Anthropic | null = null;
 
@@ -196,7 +197,7 @@ function textOf(response: Anthropic.Message): string {
     .join("");
 }
 
-async function insertAnalysis(input: {
+export async function insertAnalysis(input: {
   videoId: number;
   model: AnalysisModel;
   status: "ok" | "failed";
@@ -232,6 +233,10 @@ async function insertAnalysis(input: {
 
   // Analyses are append-only, so insertId is always a fresh row here — unlike
   // the upsert paths in the ingest layer, where it cannot be trusted.
+  // Record spend from the same place the row is written, so no code path can
+  // charge the account without the monthly counter seeing it (PR-07).
+  await recordSpend(input.costUsd);
+
   const [row] = await db
     .select()
     .from(analyses)
