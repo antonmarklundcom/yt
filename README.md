@@ -14,14 +14,29 @@ Full specification: [`PLAN.md`](./PLAN.md).
 | PR | Scope | State |
 |---|---|---|
 | 01 | Caption extraction spike — **the gate** | Built; **awaiting a Hostinger run** |
-| 02 | Next.js + Drizzle + MySQL scaffold | — |
-| 03 | Schema, migrations, seed | — |
-| 04 | YouTube Data API client | — |
-| 05 | Caption pipeline | — |
-| 06 | Analysis pipeline | — |
-| 07 | Spend guard + Batch API | — |
-| 08–13 | UI (Sonnet track) | — |
+| 02 | Next.js + Drizzle + MySQL scaffold | Merged |
+| 03 | Schema, migrations, seed | Merged (not yet applied to Hostinger MySQL) |
+| 04 | YouTube Data API client | Merged |
+| 05 | Caption pipeline | Merged |
+| 06 | Analysis pipeline | Merged |
+| 07 | Spend guard + Batch API | Merged |
+| 08–13 | UI (Sonnet track) | Next — see [`docs/HANDOFF-SONNET.md`](./docs/HANDOFF-SONNET.md) |
 | 14 | Cron, deploy, basic auth | — |
+
+## Commands
+
+```bash
+npm run probe:captions    # PR-01 gate — run this on Hostinger first
+npm run db:check          # verify the database connection
+npm run db:migrate        # apply the schema
+npm run db:seed           # create the single v1 user (needs ADMIN_EMAIL)
+npm run ingest '<url>'    # add a video, playlist or channel
+npm run analyze -- --pending
+npm run poll              # poll tracked sources, submit a batch
+npm run backfill          # analyse everything pending
+npm run spend             # month-to-date vs cap
+npm test                  # 23 unit tests, no network or database needed
+```
 
 ## The gate
 
