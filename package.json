@@ -18,9 +18,11 @@
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx scripts/seed.ts",
     "yt:uploads": "tsx scripts/list-uploads.ts",
-    "ingest": "tsx scripts/ingest.ts"
+    "ingest": "tsx scripts/ingest.ts",
+    "analyze": "tsx scripts/analyze.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.116.0",
     "drizzle-orm": "^0.38.3",
     "mysql2": "^3.12.0",
     "next": "^15.1.3",

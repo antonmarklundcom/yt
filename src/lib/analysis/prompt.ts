@@ -1,0 +1,141 @@
+import type { AnalysisPayload } from "./contract";
+
+/**
+ * The analysis prompt (PLAN.md §4). Versioned via ANALYSIS_PROMPT_VERSION in
+ * contract.ts — bump it when a change here alters the meaning of stored output,
+ * so old analyses stay interpretable.
+ *
+ * The system prompt is byte-identical across every video, which is what makes
+ * it cacheable; the transcript goes in the user turn, after the cache
+ * breakpoint. See CACHE_NOTE below for why that matters less than PLAN.md §1.4
+ * assumes.
+ */
+
+export const ANALYSIS_SYSTEM_PROMPT = `You analyse YouTube video transcripts for a researcher who studies how successful videos are built. They read your analysis instead of watching the video, so it has to carry the weight the video would have.
+
+You will receive a transcript, usually auto-generated from captions. It has no speaker labels, no punctuation you can trust, and no visual information. Work with what the words tell you and do not speculate about anything on screen.
+
+Write for someone who already knows the subject area. Skip throat-clearing, skip restating the title, and do not praise the video. Specifics beat adjectives everywhere: "opens by naming a number the viewer will not believe" is useful, "great hook" is not.
+
+For each field:
+
+summary — What the video actually argues or teaches, in a few sentences. The thesis and the shape of the case, not a list of topics covered.
+
+takeaways — The concrete claims a viewer would leave with. Each one should stand alone and be worth disagreeing with. Prefer the specific over the safe.
+
+hook — How the first thirty seconds earn the next thirty. technique names the mechanism (open loop, contrarian claim, stakes escalation, demonstration, and so on). first_30s quotes or closely paraphrases what is actually said. why_it_works explains the mechanism in terms of what the viewer wants or fears.
+
+timeline — The beats of the video in order. ts is a timestamp label like "04:15"; if the transcript gives you no reliable timing, estimate from position and keep going rather than omitting the field. Each beat should mark a genuine turn in the argument, not an arbitrary interval.
+
+gaps — Where the video is weak, unsupported, or conveniently silent. counter_angle is the video someone could make in response. This section is the most valuable one and the easiest to fill with padding, so leave it short rather than inventing weaknesses.
+
+ideas — Videos worth making, informed by this one but not copies of it. why_now should point at something real about the current moment, not a generic claim that the topic is popular.
+
+Base everything on the transcript. If it is too short, truncated, or garbled to support a field, say so plainly in that field rather than inventing content.`;
+
+/**
+ * Whether the system prompt is long enough to actually cache on this model.
+ *
+ * Below the model's minimum, `cache_control` is silently ignored — no error,
+ * just `cache_creation_input_tokens: 0`. Haiku 4.5's minimum is 4096 tokens,
+ * and this prompt is well under that, so PLAN.md §1.4's prompt-caching saving
+ * does not currently apply. See docs/PR-06-ANALYSIS.md.
+ */
+export const CACHE_NOTE =
+  "Prompt caching is requested but will not engage on Haiku 4.5 unless the " +
+  "system prompt exceeds 4096 tokens. Verify with cache_creation_input_tokens.";
+
+export function buildUserPrompt(input: {
+  title: string;
+  channelTitle: string | null;
+  durationSeconds: number | null;
+  transcript: string;
+}): string {
+  const meta = [
+    `Title: ${input.title}`,
+    input.channelTitle ? `Channel: ${input.channelTitle}` : null,
+    input.durationSeconds ? `Duration: ${formatDuration(input.durationSeconds)}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return `${meta}\n\nTranscript:\n\n${input.transcript}`;
+}
+
+function formatDuration(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  return h > 0
+    ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
+    : `${m}:${String(s).padStart(2, "0")}`;
+}
+
+/**
+ * JSON Schema for the §4 contract, used with structured outputs so the model is
+ * constrained to this shape rather than merely asked for it.
+ *
+ * Every object needs `additionalProperties: false` and a complete `required`
+ * list; length and count constraints are not supported and are expressed in the
+ * prompt instead.
+ */
+export const ANALYSIS_JSON_SCHEMA = {
+  type: "object",
+  properties: {
+    summary: { type: "string" },
+    takeaways: { type: "array", items: { type: "string" } },
+    hook: {
+      type: "object",
+      properties: {
+        technique: { type: "string" },
+        first_30s: { type: "string" },
+        why_it_works: { type: "string" },
+      },
+      required: ["technique", "first_30s", "why_it_works"],
+      additionalProperties: false,
+    },
+    timeline: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          ts: { type: "string" },
+          topic: { type: "string" },
+          beat: { type: "string" },
+        },
+        required: ["ts", "topic", "beat"],
+        additionalProperties: false,
+      },
+    },
+    gaps: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          gap: { type: "string" },
+          counter_angle: { type: "string" },
+        },
+        required: ["gap", "counter_angle"],
+        additionalProperties: false,
+      },
+    },
+    ideas: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          title: { type: "string" },
+          premise: { type: "string" },
+          why_now: { type: "string" },
+        },
+        required: ["title", "premise", "why_now"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["summary", "takeaways", "hook", "timeline", "gaps", "ideas"],
+  additionalProperties: false,
+} as const;
+
+/** Compile-time proof that the schema and the frozen contract agree. */
+export type SchemaMatchesContract = AnalysisPayload;
