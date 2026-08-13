@@ -1,10 +1,11 @@
 import { eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { db } from "@/db";
-import { videos } from "@/db/schema";
+import { outlines, videos } from "@/db/schema";
 import { latestAnalysisForVideo } from "@/lib/analysis/latest";
 import { CaptionBadge } from "@/components/CaptionBadge";
 import { CopyAnalysisButton } from "@/components/CopyAnalysisButton";
+import { IdeaOutline } from "@/components/IdeaOutline";
 import { formatDate, formatDuration } from "@/lib/format";
 
 export default async function VideoPage({ params }: { params: Promise<{ id: string }> }) {
@@ -17,6 +18,11 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
   if (!video) notFound();
 
   const analysis = await latestAnalysisForVideo(video.id);
+  const outlineRows =
+    analysis && analysis.status === "ok"
+      ? await db.select().from(outlines).where(eq(outlines.analysisId, analysis.id))
+      : [];
+  const outlineByIdeaIndex = new Map(outlineRows.map((o) => [o.ideaIndex, o.content]));
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-10">
@@ -136,6 +142,12 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
                     <p className="mt-1 text-xs text-[var(--color-ink-muted)]">
                       Why now: {idea.why_now}
                     </p>
+                    <IdeaOutline
+                      analysisId={analysis.id}
+                      ideaIndex={i}
+                      videoId={video.id}
+                      outline={outlineByIdeaIndex.get(i) ?? null}
+                    />
                   </li>
                 ))}
               </ul>
