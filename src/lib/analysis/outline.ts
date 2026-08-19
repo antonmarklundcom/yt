@@ -33,6 +33,57 @@ export type GenerateOutlineResult =
   | { status: "ok"; outline: Outline; payload: OutlinePayload; costUsd: number }
   | { status: "failed"; error: string };
 
+/**
+ * Persist a failed generation.
+ *
+ * run.ts writes a row for every failed analysis; this path used to write
+ * nothing, so a paid call that failed to parse left no trace once the toast
+ * disappeared — the raw response that would explain it was discarded.
+ *
+ * The one thing a failure must never do is destroy a good outline. The unique
+ * key is (analysis_id, idea_index), so a blind upsert would replace a working
+ * outline with an error row the moment a re-generate failed. Existing success
+ * wins; the caller still gets the error to show.
+ */
+async function recordOutlineFailure(input: {
+  analysisId: number;
+  ideaIndex: number;
+  error: string;
+  rawResponse?: string;
+  model: AnalysisModel;
+  costUsd: number;
+}): Promise<void> {
+  const [existing] = await db
+    .select({ status: outlines.status })
+    .from(outlines)
+    .where(and(eq(outlines.analysisId, input.analysisId), eq(outlines.ideaIndex, input.ideaIndex)))
+    .limit(1);
+  if (existing?.status === "ok") return;
+
+  await db
+    .insert(outlines)
+    .values({
+      analysisId: input.analysisId,
+      ideaIndex: input.ideaIndex,
+      status: "failed",
+      error: input.error.slice(0, 1024),
+      content: null,
+      rawResponse: input.rawResponse ?? null,
+      model: input.model,
+      costUsd: toCostString(input.costUsd),
+    })
+    .onDuplicateKeyUpdate({
+      set: {
+        status: "failed",
+        error: input.error.slice(0, 1024),
+        content: null,
+        rawResponse: input.rawResponse ?? null,
+        model: input.model,
+        costUsd: toCostString(input.costUsd),
+      },
+    });
+}
+
 export async function generateOutline(
   analysisId: number,
   ideaIndex: number,
@@ -73,7 +124,17 @@ export async function generateOutline(
       ],
     });
   } catch (err) {
-    return { status: "failed", error: err instanceof Error ? err.message : String(err) };
+    // No usage, so nothing was charged — but the attempt still gets a row, or
+    // the next person to look wonders why this idea has no outline.
+    const message = err instanceof Error ? err.message : String(err);
+    await recordOutlineFailure({
+      analysisId,
+      ideaIndex,
+      error: `api error: ${message}`,
+      model,
+      costUsd: 0,
+    });
+    return { status: "failed", error: message };
   }
 
   const usage = readUsage(response);
@@ -85,6 +146,16 @@ export async function generateOutline(
 
   const parsed = parseOutlineResponse(raw);
   if (!parsed.ok) {
+    // The raw response is the only thing that explains a parse failure, and it
+    // was being thrown away while still being paid for.
+    await recordOutlineFailure({
+      analysisId,
+      ideaIndex,
+      error: parsed.error,
+      rawResponse: raw,
+      model,
+      costUsd,
+    });
     await recordSpend(costUsd);
     return { status: "failed", error: parsed.error };
   }
@@ -115,13 +186,19 @@ async function upsertOutline(input: {
     .values({
       analysisId: input.analysisId,
       ideaIndex: input.ideaIndex,
+      status: "ok",
+      error: null,
       content: input.payload,
       rawResponse: input.rawResponse,
       model: input.model,
       costUsd: toCostString(input.costUsd),
     })
+    // Clearing status/error matters: a retry after a failure must leave a
+    // clean row, not a success carrying the previous attempt's error text.
     .onDuplicateKeyUpdate({
       set: {
+        status: "ok",
+        error: null,
         content: input.payload,
         rawResponse: input.rawResponse,
         model: input.model,

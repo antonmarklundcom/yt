@@ -32,6 +32,7 @@ import {
   spendStatus,
   type SpendStatus,
 } from "@/lib/spend";
+import { YouTubeDataClient } from "@/lib/youtube/data-api";
 import { QuotaExhaustedError } from "@/lib/youtube/quota";
 
 export type PollOptions = {
@@ -123,12 +124,17 @@ export async function pollSources(options: PollOptions = {}): Promise<PollResult
 
   onProgress({ phase: "sources", count: active.length });
 
+  // One client, therefore one QuotaTracker, for every source in this run.
+  // Per-source clients each started their budget at zero, which made the guard
+  // blind to a run that was collectively burning the daily allowance.
+  const youtube = new YouTubeDataClient();
+
   const results: PollSourceResult[] = [];
   let quotaExhausted = false;
 
   for (const source of active) {
     try {
-      const result = await pollSource(source, limit);
+      const result = await pollSource(source, limit, youtube);
       results.push(result);
       onProgress({ phase: "source", result });
     } catch (err) {
@@ -278,13 +284,17 @@ export async function pollSources(options: PollOptions = {}): Promise<PollResult
   });
 }
 
-async function pollSource(source: Source, limit: number): Promise<PollSourceResult> {
+async function pollSource(
+  source: Source,
+  limit: number,
+  client: YouTubeDataClient,
+): Promise<PollSourceResult> {
   const ref =
     source.kind === "channel"
       ? ({ kind: "channel", channelId: source.youtubeId } as const)
       : ({ kind: "playlist", playlistId: source.youtubeId } as const);
 
-  const summary = await ingestRef(ref, { limit, skipCaptions: false });
+  const summary = await ingestRef(ref, { limit, skipCaptions: false, client });
 
   await db.update(sources).set({ lastPolledAt: new Date() }).where(eq(sources.id, source.id));
 
