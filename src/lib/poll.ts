@@ -10,17 +10,21 @@
  * but an exit code.
  */
 
-import { asc, eq, inArray } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { analyses, sources, type Source } from "@/db/schema";
+import { sources, type Source } from "@/db/schema";
 import {
   awaitBatch,
+  batchStatus,
   collectBatchResults,
+  mapProviderStatus,
+  markBatchStatus,
+  openBatches,
   submitAnalysisBatch,
   type BatchOutcome,
 } from "@/lib/analysis/batch";
-import { DEFAULT_MODEL, type AnalysisModel } from "@/lib/analysis/pricing";
-import { anthropic, findPendingVideos } from "@/lib/analysis/run";
+import { DEFAULT_MODEL, isAnalysisModel, type AnalysisModel } from "@/lib/analysis/pricing";
+import { findPendingVideos } from "@/lib/analysis/run";
 import { ingestRef } from "@/lib/ingest";
 import {
   estimateBatchCostUsd,
@@ -50,6 +54,7 @@ export type PollEvent =
   | { phase: "source"; result: PollSourceResult }
   | { phase: "quota-exhausted"; message: string }
   | { phase: "collected"; batchId: string; outcome: BatchOutcome }
+  | { phase: "batch-unreadable"; batchId: string; message: string }
   | { phase: "pending"; count: number }
   | { phase: "submitted"; batchId: string; videoCount: number; estimatedUsd: number }
   | { phase: "batch-status"; batchId: string; status: string };
@@ -173,8 +178,11 @@ export async function pollSources(options: PollOptions = {}): Promise<PollResult
 
   // Collect anything that finished since the last run before deciding what is
   // still pending — a collected batch removes its videos from the pending set.
-  const collected = dryRun ? [] : await collectFinishedBatches(model, onProgress);
-  const inFlight = await inFlightBatchIds();
+  // A dry run must not write analyses rows, so it only reads which batches are
+  // still open.
+  const reconciled = await reconcileBatches({ collect: !dryRun, onProgress });
+  const collected = reconciled.collected;
+  const inFlight = reconciled.inFlight;
 
   const pending = await findPendingVideos(pendingLimit);
   onProgress({ phase: "pending", count: pending.length });
@@ -296,58 +304,64 @@ async function pollSource(source: Source, limit: number): Promise<PollSourceResu
 }
 
 /**
- * Recent batches, by processing status.
+ * Bring every batch this app has submitted up to date, and write the results of
+ * any that have finished.
  *
- * Nothing records a batch id at submission time — `analyses.batch_id` is only
- * written when results are collected — so the Anthropic API is the ledger. Only
- * the last 24 hours are considered, which is the API's own batch ceiling.
+ * This walks rows in `batches` and retrieves each by id. It used to walk
+ * `messages.batches.list()` filtered to the last 24 hours, which had two holes:
+ * a batch stranded by an outage longer than the API's own 24-hour window became
+ * invisible and its cost was simply lost, and every batch belonging to any
+ * other project sharing the API key showed up here and postponed submissions.
+ * Both disappear once this app's own database is the ledger.
  *
- * This assumes the API key is dedicated to this app. A key shared with another
- * project would see that project's batches here; results are still keyed by
- * `custom_id`, so nothing is mis-attributed, but an unrelated in-flight batch
- * would postpone a submission by one run.
+ * A batch that cannot be read — deleted, expired past the retention window, or
+ * a provider error — must not abort the run: the other batches, and the ingest
+ * work already done above it, are independent.
  */
-async function recentBatches(): Promise<Array<{ id: string; status: string }>> {
-  const cutoff = Date.now() - 24 * 60 * 60_000;
-  const page = await anthropic().messages.batches.list({ limit: 50 });
-  return page.data
-    .filter((b) => new Date(b.created_at).getTime() >= cutoff)
-    .map((b) => ({ id: b.id, status: b.processing_status }));
-}
-
-async function inFlightBatchIds(): Promise<string[]> {
-  const batches = await recentBatches();
-  return batches.filter((b) => b.status === "in_progress").map((b) => b.id);
-}
-
-/**
- * Write the results of every batch that has ended but was never collected.
- *
- * Without this the cron would submit work forever and never read any of it back
- * — the CLI relied on a human running `backfill.ts --collect <id>`.
- */
-async function collectFinishedBatches(
-  model: AnalysisModel,
-  onProgress: (event: PollEvent) => void,
-): Promise<Array<{ batchId: string; outcome: BatchOutcome }>> {
-  const ended = (await recentBatches()).filter((b) => b.status === "ended").map((b) => b.id);
-  if (ended.length === 0) return [];
-
-  const written = await db
-    .selectDistinct({ batchId: analyses.batchId })
-    .from(analyses)
-    .where(inArray(analyses.batchId, ended));
-  const seen = new Set(written.map((r) => r.batchId));
-
+async function reconcileBatches(options: {
+  collect: boolean;
+  onProgress: (event: PollEvent) => void;
+}): Promise<{ collected: Array<{ batchId: string; outcome: BatchOutcome }>; inFlight: string[] }> {
   const collected: Array<{ batchId: string; outcome: BatchOutcome }> = [];
-  for (const batchId of ended) {
-    if (seen.has(batchId)) continue;
-    const outcome = await collectBatchResults(batchId, { model });
-    // A batch belonging to another app writes nothing here: its custom_ids
-    // don't carry the `video-` prefix, so every entry is skipped.
-    if (outcome.succeeded + outcome.failed + outcome.expired === 0) continue;
-    collected.push({ batchId, outcome });
-    onProgress({ phase: "collected", batchId, outcome });
+  const inFlight: string[] = [];
+
+  for (const row of await openBatches()) {
+    const id = row.providerBatchId;
+    let status: string;
+    try {
+      status = mapProviderStatus((await batchStatus(id)).processing_status);
+    } catch (err) {
+      // Leave the row open. If this is transient the next run collects it; if
+      // the batch is gone for good the row is the only remaining record that
+      // money was spent, so deleting it would erase the evidence.
+      options.onProgress({
+        phase: "batch-unreadable",
+        batchId: id,
+        message: err instanceof Error ? err.message : String(err),
+      });
+      inFlight.push(id);
+      continue;
+    }
+
+    if (status !== "ended") {
+      if (row.status !== "in_progress") await markBatchStatus(id, "in_progress");
+      inFlight.push(id);
+      continue;
+    }
+
+    if (!options.collect) {
+      if (row.status !== "ended") await markBatchStatus(id, "ended");
+      // Ended but uncollected still blocks submission: its videos are paid for
+      // and would otherwise be re-submitted by the next non-dry run.
+      inFlight.push(id);
+      continue;
+    }
+
+    const model = isAnalysisModel(row.model) ? row.model : DEFAULT_MODEL;
+    const outcome = await collectBatchResults(id, { model });
+    collected.push({ batchId: id, outcome });
+    options.onProgress({ phase: "collected", batchId: id, outcome });
   }
-  return collected;
+
+  return { collected, inFlight };
 }
