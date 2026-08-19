@@ -1,6 +1,6 @@
 # YouTube Intelligence Workspace — Build Plan
 
-**Status:** planning complete, not started
+**Status:** round 1 (PR-01 → PR-14) merged, never deployed. Round 2 planned — see §9.
 **Stack:** Next.js 15 (App Router) + TypeScript + Tailwind + Drizzle ORM + MySQL (Hostinger) + tsx
 **Deploy:** Hostinger Node.js slot, GitHub integration
 **Skills to read before coding:** `nodejs-mysql-hostinger-stack`, `nextjs-deploy-hostinger`, `web-design-system`
@@ -55,6 +55,11 @@ The structured analysis output (§4) is roughly **2,500 output tokens**.
    for the budget than any model choice.
 4. **Prompt caching on the analysis system prompt.** The template is identical across every
    video; cache hits cost 10% of base input.
+   > **Correction (Aug 2026 review):** caching does NOT engage as shipped. Haiku 4.5's
+   > minimum cacheable prefix is 4096 tokens and the system prompt is ~650, so the
+   > `cache_control` breakpoints in `run.ts`/`batch.ts` are a no-op — and batch scheduling
+   > makes hits unlikely even past that. Budget against **~$12/month**, not $6. Still cheap;
+   > do not pad the prompt just to reach the cache threshold.
 
 For comparison, AI audio transcription runs ~$0.006/minute → ~$0.18 per 30-min video.
 10 h/day of that is ~$3.60/day, ~$108/month. That is the number the paid tier must cover.
@@ -216,3 +221,86 @@ The `users` table and the `role` enum exist from PR-03. The paid tier is where A
 transcription belongs: customers who want captionless videos pay the ~$0.18/video that the
 owner declines to. That is the point at which the original spec's cost-approval modal
 becomes worth building — for someone else's spend, not the owner's.
+
+> **Update (Aug 2026):** the cheap fallback for captionless videos is now Gemini Flash via
+> direct YouTube-URL ingestion, not classic audio transcription — see §11. Roles are pulled
+> forward into round 2 (§9 Batch C); the paid *customer* tier (tenant scoping) stays here.
+
+---
+
+# Round 2 — deploy, fix, polish (planned Aug 2026)
+
+Round 1 built the whole system but it has **never run against live YouTube or MySQL**.
+Round 2 was planned after a full code + UX review (two independent reviewer passes).
+Owner decisions already made — do not re-ask:
+
+- AI analysis output stays **English**; a Swedish-output option is a cheap optional add
+  (PR-22b), not a priority.
+- Gemini captionless fallback is **deferred** (§11), revisit after the caption gate result.
+- Roles = **owner + employee** now (Batch C); customer/tenant tier stays v3.
+- Build sessions may **create and merge their own PRs when green** — full AFK mode.
+
+## 9. PR sequence, round 2
+
+Same rules as §6, plus: run `npm run typecheck && npm test && npm run build` before every
+merge. One PR per row. Sequential *within* a batch (later rows touch the same files).
+
+### Batch A — Opus 5: go live + correctness (do first, in order)
+
+| PR | Scope | Notes |
+|---|---|---|
+| **A0** (no PR) | Run the caption gate on Hostinger (`docs/NEXT-PROMPTS.md` step 0), apply migration, seed, deploy per PR-14 runbook, basic auth, cron. | **Still the gate.** If it fails: stop, report, decide (residential proxy vs §11 Gemini fallback). |
+| **15** | Batch lifecycle fixes: read the real error reason (`entry.result.error.error.type`, `batch.ts:155`); persist batch IDs at submit time (new `batches` table: id, provider_batch_id, status, submitted_at, collected_at) so an outage >24h can't strand a paid batch; collection walks stored IDs, not `batches.list()`. | Fixes two review findings. Schema addition approved. |
+| **16** | Failed outline generations write a row (store `rawResponse` + error like `run.ts` does); share one `QuotaTracker` across a whole poll run (pass the client into `ingestRef` instead of constructing per source). | Fixes two review findings. |
+
+### Batch B — Sonnet 5: product + UX (after Batch A merges)
+
+| PR | Scope |
+|---|---|
+| **17** | **Analyze from the UI** (the top product gap — `/ingest` promises it, nothing implements it): "Analyze now" on the video page's not-analysed and failed states; analysis-status badge on feed cards (pending / analysed / failed) next to the caption badge; "Re-analyze with Sonnet" using the existing `{ model, force }` options; show estimated cost (~$0.02) on the button. |
+| **18** | Route resilience: `loading.tsx`, `error.tsx`, `not-found.tsx` for every route; per-page `<title>` via `generateMetadata` (video title on `/video/[id]`); `loading="lazy"` on card thumbnails. |
+| **19** | Read tracking: `read_at` (null = unread) and `pinned` columns on `videos` (single-user, so columns beat a join table — schema addition approved); mark-read on opening a video; unread/pinned filters and visual state on the feed; sort control (published / added / views). |
+| **20** | CRUD polish: confirm before source delete; delete-video action (removes transcript/analyses too — confirm modal); edit source title; per-source video count + "polls hourly via cron" note on `/sources`; wire the existing `onProgress` callback into bulk-ingest so the form shows per-video progress instead of a frozen "Working…". |
+| **21** | Search inside analyses (extend the feed `q` to also `LIKE` over `analyses.summary` and raw JSON of takeaways/ideas via join — no new infra); distinct success/info/error styling for the three ingest-result shapes; copy button on the failed-analysis raw response. |
+| **22** | i18n + a11y: flat TS dictionary (`en`/`sv`) + `t()` helper + cookie-based toggle in the header — **no i18n library, no `[locale]` routing** (~70–90 strings, listed in the UX review); locale-aware date formatting (drop hardcoded `en-US` in `format.ts`); restore visible focus (`focus-visible:ring`) on the five inputs that removed it; `aria-live="polite"` on async form results. |
+| **22b** *(optional, low-prio)* | Swedish AI-output option: a `language` param appended to the analysis/outline prompts ("Write your entire response in Swedish."), surfaced as a setting; **requires an `ANALYSIS_PROMPT_VERSION` bump.** Skip if time-boxed. |
+
+### Batch C — Opus 5: roles (after Batch B; needs A0 live so login can be tested for real)
+
+| PR | Scope |
+|---|---|
+| **23** | Session auth: `/login` (email + password, bcrypt hash column added to `users`), httpOnly cookie session, `getSession()` / `requireUser()` helpers, logout, seed script sets the owner password. Replaces nothing — Hostinger basic auth can stay on top or be dropped once this is verified live. |
+| **24** | Role gate: extend enum to `('owner','employee')` (migration from `admin`→`owner`, `user`→`employee`); `requireRole('owner')` at the top of every money-spending action (`submitIngest` analyse paths, `generateOutlineAction`) and destructive action (`removeSource`, delete video); employee keeps add/pause sources, metadata ingest, and all reads; hide owner-only buttons per role in the UI. **The permission boundary is spend, not CRUD.** |
+
+## 10. Rules for round-2 autonomous PRs
+
+Everything in §6 still applies, with these updates:
+
+- Schema changes listed above (batches table, `read_at`/`pinned`, `password_hash`, role enum)
+  are **pre-approved** — no need to stop and ask. Any *other* schema or §4-contract change
+  still needs flagging.
+- Merge your own PR once typecheck + tests + build are green. Sequential within a batch.
+- End each batch with a short handoff note in `docs/` (new env vars, new routes, anything
+  verified live vs only written), like rounds past.
+- Report at the end: what was done, ideas noticed along the way, and honest risks/issues —
+  the owner reads these.
+
+## 11. Deferred — Gemini Flash fallback for captionless videos (v1.5)
+
+Owner-approved direction, deliberately not built yet: for videos with `caption_status='none'`,
+send the **YouTube URL directly to the Gemini API** (Flash tier), which can ingest public
+videos and transcribe/analyse the audio — roughly a few cents per 30-min video, far below
+the ~$0.18 classic-transcription estimate this plan used. Revisit **after** the A0 gate
+result: if captions work from Hostinger, most videos never need this.
+
+Prerequisite when built: introduce an `AnalysisProvider` interface first
+(`analyze(transcript|url, opts) → { payload, usage, costUsd }`). The current analysis
+package is hardcoded to the Anthropic SDK (structured output, `cache_control`, and
+especially the Batch API flow have no Gemini equivalents), so this is a 1–2 day provider
+abstraction + implementation, not a config flag. Verify Gemini media pricing at build time —
+it has churned repeatedly in 2026. Needs a Google AI API key (new external service — §6
+sign-off satisfied by this section).
+
+Not worth doing yet: swapping the *transcript* analysis model to Gemini. At ~$12/month on
+Haiku the ceiling on savings is a few dollars; the provider abstraction is only justified
+by the captionless-fallback feature.
