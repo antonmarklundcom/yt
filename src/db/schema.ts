@@ -202,6 +202,65 @@ export const analyses = mysqlTable(
 );
 
 // ---------------------------------------------------------------------------
+// batches
+// ---------------------------------------------------------------------------
+
+/**
+ * One row per submitted Batch API job (PLAN.md §9 PR-15).
+ *
+ * Before this table the Anthropic API *was* the ledger: the poller called
+ * `batches.list()` and filtered to the last 24 hours, because that is the API's
+ * own batch ceiling. Two things were wrong with that. A run that submitted a
+ * batch and then died — or an outage longer than a day — left a paid batch
+ * that nothing would ever look at again, because it had aged out of the window
+ * the poller inspected. And `list()` returns every batch on the API key, so a
+ * key shared with another project postponed submissions here for reasons this
+ * app could not see.
+ *
+ * Recording the id at submit time makes this app's own database the ledger.
+ * Collection walks stored rows and retrieves each one by id, which has no
+ * 24-hour horizon, so a stranded batch is recoverable for as long as the
+ * provider keeps its results.
+ *
+ * `status` is this app's view of the job, not a mirror of the provider's:
+ *   in_progress — submitted, results not ready
+ *   ended       — provider finished it, we have not written the rows yet
+ *   collected   — rows are in `analyses`; never looked at again
+ *   canceled    — terminal, nothing to collect
+ * Only `collected` and `canceled` are terminal, so anything else is retried by
+ * the next poll run however long it has been sitting there.
+ */
+export const batches = mysqlTable(
+  "batches",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    /** The provider's batch id (`msgbatch_…`). */
+    providerBatchId: varchar("provider_batch_id", { length: 128 }).notNull(),
+    status: mysqlEnum("status", ["in_progress", "ended", "collected", "canceled"])
+      .notNull()
+      .default("in_progress"),
+    /**
+     * The model the batch was submitted with. Collection prices results against
+     * this rather than against whatever the collecting run happens to default
+     * to — otherwise a `--model sonnet` batch collected by a plain cron run
+     * would be costed as Haiku and the spend counter would understate the bill.
+     */
+    model: varchar("model", { length: 64 }).notNull(),
+    videoCount: int("video_count").notNull().default(0),
+    estimatedUsd: decimal("estimated_usd", { precision: 10, scale: 6 }).notNull().default("0"),
+    submittedAt: timestamp("submitted_at").notNull().defaultNow(),
+    collectedAt: timestamp("collected_at"),
+  },
+  (t) => [
+    // Re-submitting the same provider id is impossible, and the unique index
+    // makes recording a submission safely re-runnable.
+    uniqueIndex("batches_provider_id_idx").on(t.providerBatchId),
+    // The poller's only query: everything not yet terminal.
+    index("batches_status_idx").on(t.status),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // outlines
 // ---------------------------------------------------------------------------
 
@@ -348,6 +407,9 @@ export type NewOutline = typeof outlines.$inferInsert;
 export type Topic = typeof topics.$inferSelect;
 export type NewTopic = typeof topics.$inferInsert;
 export type SpendLogRow = typeof spendLog.$inferSelect;
+export type Batch = typeof batches.$inferSelect;
+export type NewBatch = typeof batches.$inferInsert;
 
 export type CaptionStatus = Video["captionStatus"];
+export type BatchStatus = Batch["status"];
 export type SourceKind = Source["kind"];

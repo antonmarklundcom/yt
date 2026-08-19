@@ -1,10 +1,10 @@
 import type Anthropic from "@anthropic-ai/sdk";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, notInArray } from "drizzle-orm";
 import { db } from "@/db";
-import { transcripts, videos, type Video } from "@/db/schema";
+import { batches, transcripts, videos, type Batch, type Video } from "@/db/schema";
 import { assertWithinCap, estimateBatchCostUsd } from "@/lib/spend";
 import { parseAnalysisResponse } from "./parse";
-import { DEFAULT_MODEL, estimateCostUsd, type AnalysisModel } from "./pricing";
+import { DEFAULT_MODEL, estimateCostUsd, isAnalysisModel, toCostString, type AnalysisModel } from "./pricing";
 import { ANALYSIS_JSON_SCHEMA, ANALYSIS_SYSTEM_PROMPT, buildUserPrompt } from "./prompt";
 import { anthropic, insertAnalysis, MAX_OUTPUT_TOKENS, readUsage } from "./run";
 
@@ -99,7 +99,108 @@ export async function submitAnalysisBatch(
 
   const batch = await anthropic().messages.batches.create({ requests });
 
+  // Record the id BEFORE returning, and never behind a caller's opt-in: the
+  // window between "the provider has taken the job" and "this app knows the id"
+  // is exactly the window in which a crash strands paid work.
+  await recordBatchSubmission({
+    providerBatchId: batch.id,
+    model,
+    videoCount: usable.length,
+    estimatedUsd,
+  });
+
   return { batchId: batch.id, videoIds: usable.map((v) => v.id), estimatedUsd };
+}
+
+/**
+ * Store a submitted batch. Safe to re-run — the unique index on
+ * provider_batch_id turns a repeat into a no-op rather than a duplicate ledger
+ * entry, which matters because this is called on a path that has already spent
+ * money and must not throw.
+ */
+export async function recordBatchSubmission(input: {
+  providerBatchId: string;
+  model: AnalysisModel;
+  videoCount: number;
+  estimatedUsd: number;
+}): Promise<void> {
+  await db
+    .insert(batches)
+    .values({
+      providerBatchId: input.providerBatchId,
+      status: "in_progress",
+      model: input.model,
+      videoCount: input.videoCount,
+      estimatedUsd: toCostString(input.estimatedUsd),
+    })
+    .onDuplicateKeyUpdate({ set: { providerBatchId: input.providerBatchId } });
+}
+
+/**
+ * Every batch this app submitted and has not finished with.
+ *
+ * Terminal rows are excluded rather than filtered by age: the whole point of
+ * the table is that a batch stranded by a multi-day outage is still found.
+ */
+export async function openBatches(): Promise<Batch[]> {
+  return db
+    .select()
+    .from(batches)
+    .where(notInArray(batches.status, ["collected", "canceled"]));
+}
+
+export async function markBatchStatus(
+  providerBatchId: string,
+  status: Batch["status"],
+): Promise<void> {
+  await db
+    .update(batches)
+    .set({ status, ...(status === "collected" ? { collectedAt: new Date() } : {}) })
+    .where(eq(batches.providerBatchId, providerBatchId));
+}
+
+/** The model a batch was submitted with, for pricing its results correctly. */
+export async function batchModel(providerBatchId: string): Promise<AnalysisModel | null> {
+  const [row] = await db
+    .select({ model: batches.model })
+    .from(batches)
+    .where(eq(batches.providerBatchId, providerBatchId))
+    .limit(1);
+  return row && isAnalysisModel(row.model) ? row.model : null;
+}
+
+/**
+ * Map the provider's processing status onto ours.
+ *
+ * `canceling` is treated as still open: its results are readable once it
+ * settles, and calling it terminal early would drop rows that were already
+ * paid for.
+ */
+export function mapProviderStatus(
+  processingStatus: Anthropic.Messages.MessageBatch["processing_status"],
+): Batch["status"] {
+  return processingStatus === "ended" ? "ended" : "in_progress";
+}
+
+/**
+ * The human-readable reason a batch entry did not succeed.
+ *
+ * The nesting here is the whole point. `entry.result.error` is an
+ * `ErrorResponse` envelope whose own `type` is the constant string `"error"` —
+ * so the previous `entry.result.error.type` recorded the literal word "error"
+ * for every single failure, which is indistinguishable from every other
+ * failure. The actionable discriminator (`invalid_request_error`,
+ * `rate_limit_error`, `billing_error`, …) and the message are one level
+ * further in, at `error.error`.
+ */
+export function batchFailureReason(
+  result: Exclude<Anthropic.Messages.MessageBatchIndividualResponse["result"], { type: "succeeded" }>,
+): string {
+  if (result.type !== "errored") return `batch ${result.type}`;
+  const detail = result.error.error;
+  const message = typeof detail?.message === "string" ? detail.message.trim() : "";
+  const type = detail?.type ?? "unknown_error";
+  return message ? `batch error: ${type}: ${message}` : `batch error: ${type}`;
 }
 
 export async function batchStatus(batchId: string): Promise<Anthropic.Messages.MessageBatch> {
@@ -142,7 +243,9 @@ export async function collectBatchResults(
   batchId: string,
   options: { model?: AnalysisModel } = {},
 ): Promise<BatchOutcome> {
-  const model = options.model ?? DEFAULT_MODEL;
+  // Prefer the model the batch was actually submitted with; an explicit option
+  // still wins, for collecting a batch submitted before this table existed.
+  const model = options.model ?? (await batchModel(batchId)) ?? DEFAULT_MODEL;
   const outcome: BatchOutcome = { succeeded: 0, failed: 0, expired: 0, actualUsd: 0 };
 
   for await (const entry of await anthropic().messages.batches.results(batchId)) {
@@ -152,10 +255,7 @@ export async function collectBatchResults(
     if (entry.result.type !== "succeeded") {
       // errored / canceled / expired — record it so the backfill can see why
       // this video has no analysis instead of silently retrying forever.
-      const reason =
-        entry.result.type === "errored"
-          ? `batch error: ${entry.result.error.type}`
-          : `batch ${entry.result.type}`;
+      const reason = batchFailureReason(entry.result);
       await insertAnalysis({
         videoId,
         model,
@@ -208,6 +308,12 @@ export async function collectBatchResults(
     });
     outcome.succeeded += 1;
   }
+
+  // Terminal only after every row is written: a throw partway through leaves
+  // the batch open, and the next run re-reads it. Re-collection is safe because
+  // `analyses` is append-only and the duplicate is visible, whereas a batch
+  // marked collected after a partial write loses rows silently.
+  await markBatchStatus(batchId, "collected");
 
   return outcome;
 }

@@ -24,8 +24,9 @@ import {
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
+  const modelGiven = argv.includes("--model");
   const model: AnalysisModel =
-    argv[argv.indexOf("--model") + 1] === "sonnet" && argv.includes("--model")
+    argv[argv.indexOf("--model") + 1] === "sonnet" && modelGiven
       ? "claude-sonnet-5"
       : "claude-haiku-4-5";
 
@@ -36,7 +37,10 @@ async function main(): Promise<void> {
       console.error("--collect requires a batch id");
       process.exit(2);
     }
-    return collect(batchId, model);
+    // Without an explicit --model, price the results against the model the
+    // batch was submitted with (read from `batches`) rather than the default —
+    // collecting a Sonnet batch as Haiku would understate the spend counter.
+    return collect(batchId, modelGiven ? model : undefined);
   }
 
   const status = await spendStatus();
@@ -130,9 +134,9 @@ async function main(): Promise<void> {
   await report(await collectBatchResults(submission.batchId, { model }));
 }
 
-async function collect(batchId: string, model: AnalysisModel): Promise<void> {
+async function collect(batchId: string, model?: AnalysisModel): Promise<void> {
   console.log(`Collecting batch ${batchId}…`);
-  await report(await collectBatchResults(batchId, { model }));
+  await report(await collectBatchResults(batchId, model ? { model } : {}));
 }
 
 async function report(outcome: {
