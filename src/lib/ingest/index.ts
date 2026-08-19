@@ -19,6 +19,16 @@ export type IngestOptions = CaptionPipelineOptions & {
   limit?: number;
   /** Store metadata only; run captions later via the backfill. */
   skipCaptions?: boolean;
+  /**
+   * Reuse a client — and therefore its QuotaTracker — across several calls.
+   *
+   * A caller that ingests many refs in one process (the poller, one call per
+   * source) must pass one client for the whole run. Constructing a fresh one
+   * per ref gives each its own tracker starting at zero, so the per-run guard
+   * only ever sees a single source's usage and a runaway loop across 50
+   * sources could burn the entire daily quota without ever tripping it.
+   */
+  client?: YouTubeDataClient;
   onProgress?: (event: IngestProgress) => void;
 };
 
@@ -50,7 +60,7 @@ export async function ingestUrl(input: string, options: IngestOptions = {}): Pro
 }
 
 export async function ingestRef(ref: YouTubeRef, options: IngestOptions = {}): Promise<IngestSummary> {
-  const client = new YouTubeDataClient();
+  const client = options.client ?? new YouTubeDataClient();
   const report = options.onProgress ?? (() => {});
 
   const resolved = await client.resolve(ref);

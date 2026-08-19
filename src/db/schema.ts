@@ -275,6 +275,17 @@ export const outlines = mysqlTable(
     id: int("id").autoincrement().primaryKey(),
     analysisId: int("analysis_id").notNull(),
     ideaIndex: smallint("idea_index").notNull(),
+
+    /**
+     * [+§3] Mirrors `analyses.status`. A generation that failed used to write
+     * nothing at all, so the only record of a paid, failed call was a toast
+     * that vanished on reload — undiagnosable after the fact. `content` is null
+     * on a failed row; readers filter on status.
+     */
+    status: mysqlEnum("status", ["ok", "failed"]).notNull().default("ok"),
+    /** [+§3] Why it failed. Same 1024-char budget as `analyses.error`. */
+    error: varchar("error", { length: 1024 }),
+
     content: json("content").$type<OutlinePayload>(),
     /** Kept alongside the parsed form so a bad parse is still recoverable. */
     rawResponse: longtext("raw_response"),
@@ -284,6 +295,9 @@ export const outlines = mysqlTable(
   },
   (t) => [
     // One outline per idea — regenerating replaces rather than accumulates.
+    // A failed row occupies that slot too, so a retry overwrites the failure
+    // instead of stacking; a *successful* outline is never overwritten by a
+    // later failure (see recordOutlineFailure in analysis/outline.ts).
     uniqueIndex("outlines_analysis_idea_idx").on(t.analysisId, t.ideaIndex),
   ],
 );

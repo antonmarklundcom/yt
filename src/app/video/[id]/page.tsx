@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { db } from "@/db";
 import { outlines, videos } from "@/db/schema";
@@ -20,7 +20,12 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
   const analysis = await latestAnalysisForVideo(video.id);
   const outlineRows =
     analysis && analysis.status === "ok"
-      ? await db.select().from(outlines).where(eq(outlines.analysisId, analysis.id))
+      ? await db
+          .select()
+          .from(outlines)
+          // Failed generations now occupy a row too (PR-16); only successful
+          // ones are outlines as far as the page is concerned.
+          .where(and(eq(outlines.analysisId, analysis.id), eq(outlines.status, "ok")))
       : [];
   const outlineByIdeaIndex = new Map(outlineRows.map((o) => [o.ideaIndex, o.content]));
 
