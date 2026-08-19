@@ -20,8 +20,12 @@ Full specification: [`PLAN.md`](./PLAN.md).
 | 05 | Caption pipeline | Merged |
 | 06 | Analysis pipeline | Merged |
 | 07 | Spend guard + Batch API | Merged |
-| 08–13 | UI (Sonnet track) | Next — see [`docs/HANDOFF-SONNET.md`](./docs/HANDOFF-SONNET.md) |
-| 14 | Cron, deploy, basic auth | — |
+| 08–13 | UI (Sonnet track) | Merged |
+| 14 | Cron, deploy, basic auth | Merged (code only — **not yet deployed**) |
+
+**Round 2** (deploy + fixes + UX + i18n + roles) is planned — see `PLAN.md` §9.
+Nothing has run against live YouTube or MySQL yet; the caption gate below is still
+the first step.
 
 ## Commands
 
