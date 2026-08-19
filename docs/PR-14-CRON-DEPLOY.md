@@ -52,14 +52,19 @@ convention.
 2. **A run refuses to submit while another batch is still `in_progress`.**
    Videos stay "pending" until their batch's results are written, so the next
    hourly run would re-submit the same transcripts and pay for them twice.
-   Nothing records a batch id at submission time (`analyses.batch_id` is only
-   written at collection), so the Anthropic batches API is the ledger; only the
-   last 24 h is considered, which is the API's own batch ceiling.
 
-This assumes `ANTHROPIC_API_KEY` is dedicated to this app. A key shared with
-another project would list that project's batches too. Nothing is
-mis-attributed — results are matched by the `video-` `custom_id` prefix — but an
-unrelated in-flight batch would postpone a submission by one run.
+**Updated by PR-15.** The two paragraphs above originally described a ledger
+kept in the Anthropic API: the poller called `messages.batches.list()` and
+filtered to the last 24 h, the API's own batch ceiling. That had two holes — an
+outage longer than a day aged a *paid* batch out of the window and it was never
+collected, and a key shared with another project surfaced that project's
+batches here and postponed submissions for invisible reasons.
+
+Since PR-15 the ledger is the `batches` table in this app's own database. The
+provider batch id is written immediately after `batches.create()` returns, and
+collection walks stored rows and retrieves each by id — no 24-hour horizon and
+no foreign batches. A key shared with another project is now harmless. A batch
+whose id cannot be read is left open and reported rather than deleted.
 
 ---
 

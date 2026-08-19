@@ -27,7 +27,7 @@ export DATABASE_URL='mysql://user:pass@host:3306/dbname'
 npm run db:migrate
 export ADMIN_EMAIL='you@example.com'
 npm run db:seed
-npm run db:check      # should list 9 tables
+npm run db:check      # should list 10 tables (batches was added in PR-15)
 ```
 
 ---
