@@ -3,8 +3,8 @@
 **All of round 2's code is merged**, plus PR-25. PR-15 → PR-25, every row in
 PLAN.md §9 except A0 — which is not a coding task and has still not been done.
 
-`main` is green: `npm run typecheck`, `npm test` (67 pass), `npx eslint .`,
-`npm run build`.
+`main` is green. Test count moves with each round — see
+`docs/HANDOFF-ROUND-3.md` for the current one.
 
 | PR | Scope | State |
 |---|---|---|
@@ -102,7 +102,7 @@ From a machine whose IP is whitelisted in hPanel → Remote MySQL:
 export DATABASE_URL='mysql://user:pass@srv####.hstgr.io:3306/dbname'
 export ADMIN_EMAIL='you@example.com'
 export ADMIN_PASSWORD='<at least 12 characters>'   # NEW — this is your login
-npm run db:migrate     # applies all five
+npm run db:migrate     # applies all six
 npm run db:seed        # creates/updates the owner and sets the password
 npm run db:check       # expect 11 tables
 ```
@@ -146,15 +146,17 @@ in §1.4 says prompt caching does not engage, so budget ~$12/month, not $6.
   are rows in `video_reads` keyed `(video_id, user_id)`, so an employee's reading
   no longer marks yours. Migration 0006 carries the existing state over to the
   owner. Like everything else here, it has never run against a real database.
-- **`deleteVideo` is not transactional** (see `docs/HANDOFF-BATCH-B.md` §6).
+- ~~`deleteVideo` is not transactional.~~ **Fixed by PR-31.**
 
 ## 6. What is left, honestly
 
 Nothing in PLAN.md §5 or §9 is unbuilt except **A0**, which needs credentials
 only the owner has. Beyond that the plan's own remainders are:
 
-- **§7 topic intelligence** — `topics`/`video_topics` are written at analysis
-  time and nothing reads them; `/topics` does not exist.
+- **§7 topic intelligence** — `/topics` does not exist, and (correcting this
+  line's earlier claim) nothing *writes* `topics`/`video_topics` either: the
+  frozen analysis contract has no topics field. `docs/HANDOFF-ROUND-3.md` §4
+  covers what building it would actually cost.
 - **§11 Gemini Flash fallback** for captionless videos — deliberately deferred
   until the gate result is known, and gated behind an `AnalysisProvider`
   abstraction that does not exist yet.
@@ -162,8 +164,5 @@ only the owner has. Beyond that the plan's own remainders are:
   user-management UI: a second account is an INSERT by hand plus a password hash.
   PR-25 makes that account safe to create; it does not make it easy.
 - The round-3 candidates in `docs/HANDOFF-BATCH-A.md` §6 and
-  `docs/HANDOFF-BATCH-B.md` §7. The two I would pick first: the spend cap does
-  not count submitted-but-uncollected batches (a real correctness gap, and
-  `batches.estimated_usd` already holds what it needs), and there is no bulk
-  "analyse selected" on the feed, which is the difference between one click and
-  forty after the first big ingest.
+  `docs/HANDOFF-BATCH-B.md` §7. **Most of these are now done** (PR-26 → PR-32);
+  what is left of them, and why, is in `docs/HANDOFF-ROUND-3.md` §4.
