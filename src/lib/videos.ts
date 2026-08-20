@@ -1,6 +1,6 @@
-import { and, desc, eq, like, sql } from "drizzle-orm";
+import { and, desc, eq, getTableColumns, like, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { videos, type CaptionStatus, type Video } from "@/db/schema";
+import { analyses, videos, type Analysis, type CaptionStatus, type Video } from "@/db/schema";
 
 export const DIGEST_PAGE_SIZE = 24;
 
@@ -10,8 +10,16 @@ export type DigestQuery = {
   page?: number;
 };
 
+/**
+ * A feed row carries the state of its newest analysis (PR-17). This is a
+ * correlated subquery rather than a join because `analyses` is append-only —
+ * a join emits one row per attempt and would need de-duplicating in code, and
+ * would break the SQL-side pagination the feed depends on.
+ */
+export type DigestVideo = Video & { analysisStatus: Analysis["status"] | null };
+
 export type DigestPage = {
-  videos: Video[];
+  videos: DigestVideo[];
   total: number;
   page: number;
   totalPages: number;
@@ -45,7 +53,14 @@ export async function listDigestVideos(query: DigestQuery): Promise<DigestPage> 
   const clampedPage = Math.min(page, totalPages);
 
   const rows = await db
-    .select()
+    .select({
+      ...getTableColumns(videos),
+      analysisStatus: sql<Analysis["status"] | null>`(
+        select a.status from ${analyses} a
+        where a.video_id = ${videos.id}
+        order by a.id desc limit 1
+      )`,
+    })
     .from(videos)
     .where(where)
     .orderBy(desc(videos.publishedAt), desc(videos.id))
