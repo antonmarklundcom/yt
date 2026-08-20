@@ -44,12 +44,33 @@ export async function addSource(
   return { ok: true };
 }
 
+/**
+ * Rename a tracked source.
+ *
+ * The title comes from YouTube at ingest time and is overwritten by
+ * upsertChannelSource/upsertPlaylistSource on the next poll, so this is a
+ * local label that survives until then — worth having for channels whose own
+ * title is unhelpful, not a permanent rename.
+ */
+export async function renameSource(id: number, formData: FormData): Promise<void> {
+  const title = String(formData.get("title") ?? "").trim();
+  if (!title) return;
+  await db.update(sources).set({ title: title.slice(0, 512) }).where(eq(sources.id, id));
+  revalidatePath("/sources");
+}
+
 /** Pause = active=false, never delete. Preserves last_polled_at as the poll cursor. */
 export async function setSourceActive(id: number, active: boolean): Promise<void> {
   await db.update(sources).set({ active }).where(eq(sources.id, id));
   revalidatePath("/sources");
 }
 
+/**
+ * Removing a source does not remove its videos: the analyses are paid for and
+ * the digest is the product. The videos keep their now-dangling source_id,
+ * which is harmless — no foreign keys are declared (schema.ts) and nothing
+ * reads source_id except the per-source count.
+ */
 export async function removeSource(id: number): Promise<void> {
   await db.delete(sources).where(eq(sources.id, id));
   revalidatePath("/sources");

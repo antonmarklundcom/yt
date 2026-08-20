@@ -8,14 +8,10 @@ import { analyzeVideo } from "@/lib/analysis/run";
 import { DEFAULT_MODEL } from "@/lib/analysis/pricing";
 import { assertWithinCap, estimateAnalysisCostUsd, formatUsd, SpendCapExceededError } from "@/lib/spend";
 import { ingestUrl } from "@/lib/ingest";
+import { BULK_INGEST_LIMIT } from "@/lib/ingest/limits";
 import { upsertVideoFromMetadata } from "@/lib/ingest/store";
 import { parseYouTubeUrl } from "@/lib/youtube/url";
 import { YouTubeDataClient } from "@/lib/youtube/data-api";
-
-// A playlist/channel paste ingests metadata + captions synchronously in one
-// request; bounded so the form doesn't hang for minutes on a large channel.
-// Full backfill is `npm run backfill` / the PR-14 poller, not this form.
-const BULK_INGEST_LIMIT = 25;
 
 export type IngestFormResult = { ok: true; message: string } | { ok: false; error: string };
 
