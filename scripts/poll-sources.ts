@@ -80,8 +80,9 @@ async function main(): Promise<void> {
 
   const { before, after } = result.spend;
   console.log(
-    `\nSpend this month: ${formatUsd(after.monthToDateUsd)} of ${formatUsd(after.capUsd)} ` +
-      `(${Math.round(after.fraction * 100)}%, +${formatUsd(after.monthToDateUsd - before.monthToDateUsd)} this run)`,
+    `\nSpend this month: ${formatUsd(after.projectedUsd)} of ${formatUsd(after.capUsd)} ` +
+      `(${Math.round(after.fraction * 100)}%, +${formatUsd(after.projectedUsd - before.projectedUsd)} this run` +
+      `${after.committedUsd > 0 ? `, ${formatUsd(after.committedUsd)} committed to open batches` : ""})`,
   );
 
   if (result.skipped) {

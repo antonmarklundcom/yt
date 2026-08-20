@@ -27,6 +27,7 @@ export const en = {
   "locale.switch": "Switch language",
 
   "spend.tooltip": "spent this month",
+  "spend.committed": "committed to open batches",
 
   "digest.eyebrow": "Digest",
   "digest.countOne": "video",
@@ -203,6 +204,7 @@ export const sv: Record<TranslationKey, string> = {
   "locale.switch": "Byt språk",
 
   "spend.tooltip": "spenderat denna månad",
+  "spend.committed": "reserverat för öppna batchar",
 
   "digest.eyebrow": "Flöde",
   "digest.countOne": "video",

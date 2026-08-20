@@ -1,6 +1,6 @@
-import { and, gte, lte, sql } from "drizzle-orm";
+import { and, gte, inArray, lte, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { spendLog } from "@/db/schema";
+import { batches, spendLog } from "@/db/schema";
 import { MODEL_RATES, type AnalysisModel } from "@/lib/analysis/pricing";
 
 /**
@@ -61,6 +61,27 @@ export async function recordSpend(costUsd: number, at: Date = new Date()): Promi
     });
 }
 
+/**
+ * Money already committed to the provider and not yet billed here (PR-26).
+ *
+ * `spend_log` is written at *collection* time, so between submitting a batch
+ * and collecting it the cap under-counts by the whole batch — which is exactly
+ * the window in which a poll run would submit another one. A batch that is open
+ * will be charged; treating that as $0 makes the cap a suggestion.
+ *
+ * Not filtered by month on purpose. `recordSpend` stamps the collection date,
+ * so an open batch submitted last month bills against *this* month whenever it
+ * lands, and dropping it from the count would reopen the same hole across the
+ * month boundary.
+ */
+export async function committedUsd(): Promise<number> {
+  const [row] = await db
+    .select({ total: sql<string | null>`sum(${batches.estimatedUsd})` })
+    .from(batches)
+    .where(inArray(batches.status, ["in_progress", "ended"]));
+  return Number(row?.total ?? 0) || 0;
+}
+
 export async function monthToDateUsd(at: Date = new Date()): Promise<number> {
   const { start, end } = utcMonthRange(at);
   const [row] = await db
@@ -71,7 +92,15 @@ export async function monthToDateUsd(at: Date = new Date()): Promise<number> {
 }
 
 export type SpendStatus = {
+  /** Billed: what `spend_log` holds for this UTC month. */
   monthToDateUsd: number;
+  /** Committed but not yet billed: open batches (PR-26). Usually 0. */
+  committedUsd: number;
+  /**
+   * What the cap is actually measured against — billed + committed. Every
+   * decision uses this; `monthToDateUsd` alone is a historical figure.
+   */
+  projectedUsd: number;
   capUsd: number;
   remainingUsd: number;
   /** 0–1+, for the header meter the UI track renders. */
@@ -81,13 +110,16 @@ export type SpendStatus = {
 
 export async function spendStatus(at: Date = new Date()): Promise<SpendStatus> {
   const capUsd = monthlyCapUsd();
-  const spent = await monthToDateUsd(at);
+  const [spent, committed] = await Promise.all([monthToDateUsd(at), committedUsd()]);
+  const projected = spent + committed;
   return {
     monthToDateUsd: spent,
+    committedUsd: committed,
+    projectedUsd: projected,
     capUsd,
-    remainingUsd: Math.max(0, capUsd - spent),
-    fraction: capUsd > 0 ? spent / capUsd : 1,
-    overCap: spent >= capUsd,
+    remainingUsd: Math.max(0, capUsd - projected),
+    fraction: capUsd > 0 ? projected / capUsd : 1,
+    overCap: projected >= capUsd,
   };
 }
 
@@ -115,11 +147,16 @@ export async function assertWithinCap(
 ): Promise<SpendStatus> {
   const status = await spendStatus(at);
 
-  if (status.monthToDateUsd + estimatedUsd > status.capUsd) {
+  if (status.projectedUsd + estimatedUsd > status.capUsd) {
+    const committed =
+      status.committedUsd > 0
+        ? ` (of which $${status.committedUsd.toFixed(4)} is committed to batches ` +
+          `submitted but not yet collected)`
+        : "";
     throw new SpendCapExceededError(
       `Refusing to start: estimated $${estimatedUsd.toFixed(4)} would take ` +
-        `month-to-date spend from $${status.monthToDateUsd.toFixed(4)} to ` +
-        `$${(status.monthToDateUsd + estimatedUsd).toFixed(4)}, over the ` +
+        `this month's spend from $${status.projectedUsd.toFixed(4)}${committed} to ` +
+        `$${(status.projectedUsd + estimatedUsd).toFixed(4)}, over the ` +
         `$${status.capUsd.toFixed(2)} cap (MONTHLY_SPEND_CAP_USD). ` +
         `Raise the cap, wait for the month to roll over, or process fewer videos.`,
       status,
