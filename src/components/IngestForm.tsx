@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { submitIngest, type IngestFormResult } from "@/lib/ingest.actions";
 import { createNdjsonParser } from "@/lib/ndjson";
+import { ResultMessage, type ResultTone } from "./ResultMessage";
 import { parseYouTubeUrl } from "@/lib/youtube/url";
 
 const initialState: IngestFormResult | null = null;
@@ -45,7 +46,7 @@ export function IngestForm() {
 
   const [streaming, setStreaming] = useState(false);
   const [progress, setProgress] = useState<string[]>([]);
-  const [streamResult, setStreamResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const [streamResult, setStreamResult] = useState<{ tone: ResultTone; text: string } | null>(null);
 
   async function runStreamingIngest(url: string) {
     setStreaming(true);
@@ -74,14 +75,19 @@ export function IngestForm() {
           if (line.type === "progress") {
             setProgress((prev) => [...prev, describe(line.event)]);
           } else if (line.type === "done") {
-            setStreamResult({ ok: true, text: line.message });
+            // Bulk ingest analyses nothing, so this is never a "success" — the
+            // videos still need analysing from the feed.
+            setStreamResult({ tone: "info", text: line.message });
           } else {
-            setStreamResult({ ok: false, text: line.error });
+            setStreamResult({ tone: "error", text: line.error });
           }
         }
       }
     } catch (err) {
-      setStreamResult({ ok: false, text: err instanceof Error ? err.message : "Ingest failed." });
+      setStreamResult({
+        tone: "error",
+        text: err instanceof Error ? err.message : "Ingest failed.",
+      });
     } finally {
       setStreaming(false);
     }
@@ -101,7 +107,9 @@ export function IngestForm() {
   }
 
   const busy = pending || streaming;
-  const result = streamResult ?? (state ? { ok: state.ok, text: state.ok ? state.message : state.error } : null);
+  const result =
+    streamResult ??
+    (state ? { tone: state.tone, text: state.ok ? state.message : state.error } : null);
 
   return (
     <form action={formAction} onSubmit={onSubmit} className="flex flex-col gap-3">
@@ -149,20 +157,17 @@ export function IngestForm() {
       </button>
 
       {progress.length > 0 && (
-        <ol className="surface-border max-h-56 overflow-auto rounded-[var(--radius-sm)] bg-[var(--color-surface)] p-3 text-xs text-[var(--color-ink-muted)]">
+        <ol
+          aria-live="polite"
+          className="surface-border max-h-56 overflow-auto rounded-[var(--radius-sm)] bg-[var(--color-surface)] p-3 text-xs text-[var(--color-ink-muted)]"
+        >
           {progress.map((line, i) => (
             <li key={i}>{line}</li>
           ))}
         </ol>
       )}
 
-      {result && (
-        <p
-          className={`text-sm ${result.ok ? "text-[var(--color-accent)]" : "text-[var(--color-danger)]"}`}
-        >
-          {result.text}
-        </p>
-      )}
+      {result && <ResultMessage tone={result.tone}>{result.text}</ResultMessage>}
     </form>
   );
 }

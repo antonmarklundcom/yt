@@ -11,6 +11,7 @@ import { AnalyzeButton } from "@/components/AnalyzeButton";
 import { VideoReadControls } from "@/components/VideoReadControls";
 import { CaptionBadge } from "@/components/CaptionBadge";
 import { CopyAnalysisButton } from "@/components/CopyAnalysisButton";
+import { CopyTextButton } from "@/components/CopyTextButton";
 import { IdeaOutline } from "@/components/IdeaOutline";
 import { formatDate, formatDuration } from "@/lib/format";
 
@@ -124,9 +125,12 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
             {analysis.error ?? "No error message was recorded."}
           </p>
           {analysis.rawResponse && (
-            <pre className="surface-border mt-4 max-h-64 overflow-auto rounded-[var(--radius-sm)] bg-[var(--color-surface)] p-3 text-xs text-[var(--color-ink-muted)]">
-              {analysis.rawResponse}
-            </pre>
+            <div className="mt-4 flex flex-col items-start gap-2">
+              <pre className="surface-border max-h-64 w-full overflow-auto rounded-[var(--radius-sm)] bg-[var(--color-surface)] p-3 text-xs text-[var(--color-ink-muted)]">
+                {analysis.rawResponse}
+              </pre>
+              <CopyTextButton text={analysis.rawResponse} label="Copy raw response" />
+            </div>
           )}
           {estimate && (
             <div className="mt-5 flex flex-wrap gap-3">

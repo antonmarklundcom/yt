@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, getTableColumns, isNull, like, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, isNull, like, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { analyses, videos, type Analysis, type CaptionStatus, type Video } from "@/db/schema";
 
@@ -53,6 +53,36 @@ export function parseDigestSort(value: string | undefined): DigestSort | undefin
   return SORT_VALUES.find((s) => s === value);
 }
 
+/**
+ * Free-text match across the title and the stored analysis (PR-21).
+ *
+ * EXISTS over `analyses` rather than a join: the table is append-only, so a
+ * join would multiply feed rows by the number of attempts per video and break
+ * both the COUNT and the LIMIT/OFFSET paging.
+ *
+ * `takeaways` and `ideas` are JSON columns; MySQL will not LIKE them directly,
+ * hence the CAST. That searches the raw JSON — keys and punctuation included —
+ * which is exactly what §9's "raw JSON of takeaways/ideas" asks for and is
+ * good enough for a private tool. Nothing here is interpolated: `like()` and
+ * the `sql` template both parameterise their values.
+ */
+function matchesQuery(q: string) {
+  const needle = `%${q}%`;
+  return or(
+    like(videos.title, needle),
+    sql`exists (
+      select 1 from ${analyses} a
+      where a.video_id = ${videos.id}
+        and a.status = 'ok'
+        and (
+          a.summary like ${needle}
+          or cast(a.takeaways as char) like ${needle}
+          or cast(a.ideas as char) like ${needle}
+        )
+    )`,
+  );
+}
+
 function orderFor(sort: DigestSort | undefined) {
   switch (sort) {
     case "added":
@@ -73,7 +103,7 @@ function orderFor(sort: DigestSort | undefined) {
 export async function listDigestVideos(query: DigestQuery): Promise<DigestPage> {
   const page = Math.max(1, query.page ?? 1);
   const conditions = [
-    query.q ? like(videos.title, `%${query.q}%`) : undefined,
+    query.q ? matchesQuery(query.q) : undefined,
     query.status ? eq(videos.captionStatus, query.status) : undefined,
     query.filter === "unread" ? isNull(videos.readAt) : undefined,
     query.filter === "pinned" ? eq(videos.pinned, true) : undefined,
