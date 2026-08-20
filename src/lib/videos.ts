@@ -2,6 +2,7 @@ import { and, asc, desc, eq, getTableColumns, isNull, like, or, sql } from "driz
 import { db } from "@/db";
 import {
   analyses,
+  transcripts,
   videoReads,
   videos,
   type Analysis,
@@ -42,6 +43,12 @@ export type DigestQuery = {
  */
 export type DigestVideo = Video & {
   analysisStatus: Analysis["status"] | null;
+  /**
+   * Words in the stored transcript, or null when there is none (PR-28). The
+   * feed needs it to price a bulk selection before submitting it — an estimate
+   * that appears only after the money is committed is not an estimate.
+   */
+  transcriptWords: number | null;
   /** This user's read state, from the LEFT JOIN — null when never opened. */
   readAt: Date | null;
   pinned: boolean;
@@ -150,6 +157,9 @@ export async function listDigestVideos(query: DigestQuery): Promise<DigestPage> 
         select a.status from ${analyses} a
         where a.video_id = ${videos.id}
         order by a.id desc limit 1
+      )`,
+      transcriptWords: sql<number | null>`(
+        select t.word_count from ${transcripts} t where t.video_id = ${videos.id} limit 1
       )`,
       readAt: videoReads.readAt,
       pinned: videoReads.pinned,

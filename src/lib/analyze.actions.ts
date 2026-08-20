@@ -4,10 +4,12 @@ import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { transcripts, videos } from "@/db/schema";
-import { analyzeVideo } from "@/lib/analysis/run";
+import { openBatches, submitAnalysisBatch } from "@/lib/analysis/batch";
+import { analyzeVideo, findPendingVideosByIds } from "@/lib/analysis/run";
+import { BULK_ANALYZE_LIMIT, parseVideoIds } from "@/lib/bulk-select";
 import { ForbiddenError } from "@/lib/auth/roles";
 import { requireOwner } from "@/lib/auth/session";
-import { DEFAULT_MODEL, isAnalysisModel } from "@/lib/analysis/pricing";
+import { DEFAULT_MODEL, isAnalysisModel, type AnalysisModel } from "@/lib/analysis/pricing";
 import {
   assertWithinCap,
   estimateAnalysisCostUsd,
@@ -76,4 +78,84 @@ export async function analyzeVideoAction(
     if (err instanceof SpendCapExceededError) return { ok: false, error: err.message };
     return { ok: false, error: err instanceof Error ? err.message : "Analysis failed." };
   }
+}
+
+/**
+ * Analyse a selection from the feed (PR-28).
+ *
+ * Submitted through the Batch API rather than one interactive call per video:
+ * forty videos is forty minutes of blocking work at the interactive path, which
+ * no server action survives, and the batch path is half the price for work
+ * nobody is waiting on. The results land the same way the poller's do — the
+ * next collection writes them.
+ *
+ * Takes FormData because the control is a plain form of checkboxes; the ids are
+ * re-filtered server-side (`findPendingVideosByIds`) rather than trusted, since
+ * a form post is a public endpoint.
+ */
+export type BulkAnalyzeState = { ok: true; message: string } | { ok: false; error: string } | null;
+
+export async function analyzeSelectedAction(
+  _prev: BulkAnalyzeState,
+  formData: FormData,
+): Promise<BulkAnalyzeState> {
+  try {
+    await requireOwner("start an analysis");
+
+    const model = readModel(formData.get("model"));
+    const ids = parseVideoIds(formData.getAll("videoId"));
+    if (ids.length === 0) return { ok: false, error: "Nothing selected." };
+    if (ids.length > BULK_ANALYZE_LIMIT) {
+      return {
+        ok: false,
+        error: `Select at most ${BULK_ANALYZE_LIMIT} videos at once.`,
+      };
+    }
+
+    // One batch at a time, for the same reason the poller skips while one is in
+    // flight: a submitted batch's videos still look pending until its results
+    // are collected, so a second submission pays for the same transcripts twice.
+    const open = await openBatches();
+    if (open.length > 0) {
+      return {
+        ok: false,
+        error:
+          `A batch (${open[0]!.providerBatchId}) is still processing. ` +
+          "Its videos still count as pending, so submitting now would pay for some of them twice. " +
+          "Wait for the next poll to collect it.",
+      };
+    }
+
+    const pending = await findPendingVideosByIds(ids);
+    if (pending.length === 0) {
+      return {
+        ok: false,
+        error: "Nothing to do — every selected video is already analysed or has no transcript.",
+      };
+    }
+
+    const submission = await submitAnalysisBatch(pending, { model });
+    if (!submission) {
+      return { ok: false, error: "No selected video had a usable transcript." };
+    }
+
+    revalidatePath("/");
+    const skipped = ids.length - submission.videoIds.length;
+    return {
+      ok: true,
+      message:
+        `Submitted ${submission.videoIds.length} video(s) as batch ${submission.batchId}, ` +
+        `estimated ${formatUsd(submission.estimatedUsd)}. Results appear once the batch is ` +
+        `collected — the hourly poll does that, or run \`npm run poll -- --collect\`.` +
+        (skipped > 0 ? ` ${skipped} selected video(s) needed no work.` : ""),
+    };
+  } catch (err) {
+    if (err instanceof ForbiddenError) return { ok: false, error: err.message };
+    if (err instanceof SpendCapExceededError) return { ok: false, error: err.message };
+    return { ok: false, error: err instanceof Error ? err.message : "Submission failed." };
+  }
+}
+
+function readModel(raw: FormDataEntryValue | null): AnalysisModel {
+  return typeof raw === "string" && isAnalysisModel(raw) ? raw : DEFAULT_MODEL;
 }
