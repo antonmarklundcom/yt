@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, getTableColumns, isNull, like, or, sql } from "drizzle-orm";
 import { db } from "@/db";
+import { describeMatch, type SearchMatch } from "@/lib/search-excerpt";
 import {
   analyses,
   transcripts,
@@ -43,6 +44,12 @@ export type DigestQuery = {
  */
 export type DigestVideo = Video & {
   analysisStatus: Analysis["status"] | null;
+  /**
+   * Why this video is in the results (PR-30). Null when there is no query.
+   * Computed in JS from the summary rather than in SQL: the reason has to be
+   * legible, and MySQL has no substring window worth writing by hand.
+   */
+  match: SearchMatch | null;
   /**
    * Words in the stored transcript, or null when there is none (PR-28). The
    * feed needs it to price a bulk selection before submitting it — an estimate
@@ -158,6 +165,16 @@ export async function listDigestVideos(query: DigestQuery): Promise<DigestPage> 
         where a.video_id = ${videos.id}
         order by a.id desc limit 1
       )`,
+      // Only needed to explain a match, so it is loaded only when there is one
+      // to explain — every feed page otherwise pays for a text column it does
+      // not render.
+      analysisSummary: query.q
+        ? sql<string | null>`(
+            select a.summary from ${analyses} a
+            where a.video_id = ${videos.id} and a.status = 'ok'
+            order by a.id desc limit 1
+          )`
+        : sql<string | null>`null`,
       transcriptWords: sql<number | null>`(
         select t.word_count from ${transcripts} t where t.video_id = ${videos.id} limit 1
       )`,
@@ -180,7 +197,11 @@ export async function listDigestVideos(query: DigestQuery): Promise<DigestPage> 
     // both columns. read_at keeps that null — it *is* "unread". `pinned` does
     // not: it is rendered as a flag, and a null there reaches JSX as a value
     // React would print rather than skip.
-    videos: rows.map((row) => ({ ...row, pinned: row.pinned ?? false })),
+    videos: rows.map(({ analysisSummary, ...row }) => ({
+      ...row,
+      pinned: row.pinned ?? false,
+      match: describeMatch(query.q, row.title, analysisSummary),
+    })),
     total,
     page: clampedPage,
     totalPages,
