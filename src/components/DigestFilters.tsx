@@ -45,8 +45,8 @@ export function DigestFilters({
         type="search"
         name="q"
         defaultValue={q}
-        placeholder="Search titles…"
-        className="surface-border w-64 rounded-[var(--radius-sm)] bg-[var(--color-surface-raised)] px-3 py-2 text-sm text-[var(--color-ink)] placeholder:text-[var(--color-ink-muted)] focus:outline-none"
+        placeholder="Search titles and analyses…"
+        className="surface-border w-72 rounded-[var(--radius-sm)] bg-[var(--color-surface-raised)] px-3 py-2 text-sm text-[var(--color-ink)] placeholder:text-[var(--color-ink-muted)] focus:outline-none"
       />
       <select name="status" defaultValue={status} className={SELECT_CLASS}>
         {STATUS_OPTIONS.map((opt) => (

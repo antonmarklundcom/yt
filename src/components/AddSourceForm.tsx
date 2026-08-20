@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { addSource, type AddSourceResult } from "@/lib/sources.actions";
+import { ResultMessage } from "./ResultMessage";
 
 const initialState: AddSourceResult | null = null;
 
@@ -26,8 +27,12 @@ export function AddSourceForm() {
           {pending ? "Adding…" : "Track"}
         </button>
       </div>
-      {state && !state.ok && <p className="text-sm text-[var(--color-danger)]">{state.error}</p>}
-      {state && state.ok && <p className="text-sm text-[var(--color-accent)]">Source added.</p>}
+      {state && !state.ok && <ResultMessage tone="error">{state.error}</ResultMessage>}
+      {state && state.ok && (
+        <ResultMessage tone="success">
+          Source added. It will be polled on the next hourly cron run.
+        </ResultMessage>
+      )}
     </form>
   );
 }
