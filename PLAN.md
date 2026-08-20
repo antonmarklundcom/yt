@@ -1,6 +1,7 @@
 # YouTube Intelligence Workspace — Build Plan
 
-**Status:** round 1 (PR-01 → PR-14) merged, never deployed. Round 2 planned — see §9.
+**Status:** round 1 (PR-01 → PR-14) and round 2 batches A and B (PR-15 → PR-22b) merged,
+never deployed. A0 (gate, migrate, deploy) and Batch C (roles) remain — see §9.
 **Stack:** Next.js 15 (App Router) + TypeScript + Tailwind + Drizzle ORM + MySQL (Hostinger) + tsx
 **Deploy:** Hostinger Node.js slot, GitHub integration
 **Skills to read before coding:** `nodejs-mysql-hostinger-stack`, `nextjs-deploy-hostinger`, `web-design-system`
