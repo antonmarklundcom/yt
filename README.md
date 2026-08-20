@@ -22,10 +22,14 @@ Full specification: [`PLAN.md`](./PLAN.md).
 | 07 | Spend guard + Batch API | Merged |
 | 08–13 | UI (Sonnet track) | Merged |
 | 14 | Cron, deploy, basic auth | Merged (code only — **not yet deployed**) |
+| 15–16 | Batch lifecycle, outline failures (round 2, Batch A) | Merged |
+| 17–22b | Analyse-from-UI, resilience, read tracking, CRUD, search, i18n (Batch B) | Merged |
 
-**Round 2** (deploy + fixes + UX + i18n + roles) is planned — see `PLAN.md` §9.
+**Round 2:** Batch A and Batch B are merged (see `docs/HANDOFF-BATCH-A.md` and
+`docs/HANDOFF-BATCH-B.md`). Batch C (session auth + roles) is the remainder, and
+**A0 — the caption gate, the migration and the deploy — is still not done.**
 Nothing has run against live YouTube or MySQL yet; the caption gate below is still
-the first step.
+the first step. Three migrations are pending.
 
 ## Commands
 
@@ -39,7 +43,7 @@ npm run analyze -- --pending
 npm run poll              # poll tracked sources, submit a batch
 npm run backfill          # analyse everything pending
 npm run spend             # month-to-date vs cap
-npm test                  # 23 unit tests, no network or database needed
+npm test                  # 57 unit tests, no network or database needed
 ```
 
 ## The gate
