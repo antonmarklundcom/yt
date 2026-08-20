@@ -6,7 +6,9 @@ import { outlines, transcripts, videos } from "@/db/schema";
 import { latestAnalysisForVideo } from "@/lib/analysis/latest";
 import { DEFAULT_MODEL } from "@/lib/analysis/pricing";
 import { estimateAnalysisCostUsd, formatUsd } from "@/lib/spend";
+import { markVideoRead } from "@/lib/videos";
 import { AnalyzeButton } from "@/components/AnalyzeButton";
+import { VideoReadControls } from "@/components/VideoReadControls";
 import { CaptionBadge } from "@/components/CaptionBadge";
 import { CopyAnalysisButton } from "@/components/CopyAnalysisButton";
 import { IdeaOutline } from "@/components/IdeaOutline";
@@ -41,6 +43,11 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
   const rows = await db.select().from(videos).where(eq(videos.id, videoId)).limit(1);
   const video = rows[0];
   if (!video) notFound();
+
+  // Opening the page is what "read" means here (PR-19). Fire-and-forget would
+  // race the render's own read of the row, so it is awaited before anything
+  // renders — one indexed UPDATE that no-ops after the first visit.
+  await markVideoRead(video.id);
 
   const analysis = await latestAnalysisForVideo(video.id);
 
@@ -81,14 +88,17 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
         <h1 className="text-2xl font-semibold text-balance text-[var(--color-ink)]">
           {video.title}
         </h1>
-        <a
-          href={`https://www.youtube.com/watch?v=${video.youtubeId}`}
-          target="_blank"
-          rel="noreferrer"
-          className="text-sm text-[var(--color-accent)] hover:underline"
-        >
-          Watch on YouTube ↗
-        </a>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <a
+            href={`https://www.youtube.com/watch?v=${video.youtubeId}`}
+            target="_blank"
+            rel="noreferrer"
+            className="text-sm text-[var(--color-accent)] hover:underline"
+          >
+            Watch on YouTube ↗
+          </a>
+          <VideoReadControls videoId={video.id} pinned={video.pinned} />
+        </div>
       </div>
 
       {!analysis && (
