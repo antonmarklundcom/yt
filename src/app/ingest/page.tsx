@@ -1,4 +1,7 @@
+import type { Metadata } from "next";
 import { IngestForm } from "@/components/IngestForm";
+
+export const metadata: Metadata = { title: "Ingest" };
 
 export default function IngestPage() {
   return (

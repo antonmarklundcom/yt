@@ -1,7 +1,10 @@
+import type { Metadata } from "next";
 import { DigestFilters } from "@/components/DigestFilters";
 import { Pagination } from "@/components/Pagination";
 import { VideoCard } from "@/components/VideoCard";
 import { listDigestVideos, parseCaptionStatus } from "@/lib/videos";
+
+export const metadata: Metadata = { title: "Digest" };
 
 type SearchParams = { q?: string; status?: string; page?: string };
 

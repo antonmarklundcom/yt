@@ -17,6 +17,10 @@ export function VideoCard({ video }: { video: DigestVideo }) {
           <img
             src={video.thumbnailUrl}
             alt=""
+            // A page of 24 cards is 24 external requests to i.ytimg.com;
+            // only the ones in view are worth paying for.
+            loading="lazy"
+            decoding="async"
             className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
           />
         ) : (

@@ -3,7 +3,12 @@ import { Header } from "@/components/Header";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "YouTube Intelligence Workspace",
+  // Template so every page's own title reads as "<page> · YT Intel" without
+  // each route repeating the suffix (PR-18).
+  title: {
+    default: "YouTube Intelligence Workspace",
+    template: "%s · YT Intel",
+  },
   description: "Private research workspace — read digests instead of watching videos.",
   // Private tool on a non-obvious subdomain (PLAN.md §0). Keep it out of indexes.
   robots: { index: false, follow: false },
