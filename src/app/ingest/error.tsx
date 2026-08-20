@@ -9,5 +9,5 @@ export default function IngestError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  return <ErrorPanel title="The ingest page could not be loaded" error={error} reset={reset} />;
+  return <ErrorPanel titleKey="error.ingest.title" error={error} reset={reset} />;
 }

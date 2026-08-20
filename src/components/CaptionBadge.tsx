@@ -1,15 +1,16 @@
 import type { CaptionStatus } from "@/db/schema";
+import { translator, type Locale, type TranslationKey } from "@/lib/i18n";
 
 /**
  * Four distinct states, four distinct looks (docs/HANDOFF-SONNET.md §2) —
  * collapsing `none` and `failed` into one badge hides the distinction the
  * caption pipeline's retry logic depends on.
  */
-const LABEL: Record<CaptionStatus, string> = {
-  unknown: "Not probed",
-  available: "Captioned",
-  none: "No captions",
-  failed: "Fetch failed",
+const KEY: Record<CaptionStatus, TranslationKey> = {
+  unknown: "caption.unknown",
+  available: "caption.available",
+  none: "caption.none",
+  failed: "caption.failed",
 };
 
 const CLASS: Record<CaptionStatus, string> = {
@@ -19,12 +20,12 @@ const CLASS: Record<CaptionStatus, string> = {
   failed: "bg-[color-mix(in_srgb,var(--color-danger)_18%,transparent)] text-[var(--color-danger)]",
 };
 
-export function CaptionBadge({ status }: { status: CaptionStatus }) {
+export function CaptionBadge({ status, locale }: { status: CaptionStatus; locale: Locale }) {
   return (
     <span
       className={`surface-border inline-flex w-fit items-center rounded-[var(--radius-sm)] px-2 py-0.5 text-xs font-medium ${CLASS[status]}`}
     >
-      {LABEL[status]}
+      {translator(locale)(KEY[status])}
     </span>
   );
 }

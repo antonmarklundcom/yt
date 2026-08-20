@@ -9,5 +9,5 @@ export default function SourcesError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  return <ErrorPanel title="Sources could not be loaded" error={error} reset={reset} />;
+  return <ErrorPanel titleKey="error.sources.title" error={error} reset={reset} />;
 }

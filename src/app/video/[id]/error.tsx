@@ -9,5 +9,5 @@ export default function VideoError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  return <ErrorPanel title="This analysis could not be loaded" error={error} reset={reset} />;
+  return <ErrorPanel titleKey="error.video.title" error={error} reset={reset} />;
 }

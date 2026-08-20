@@ -1,3 +1,5 @@
+import { translator, type Locale } from "@/lib/i18n";
+
 function buildHref(params: URLSearchParams, page: number): string {
   const next = new URLSearchParams(params);
   next.set("page", String(page));
@@ -8,12 +10,15 @@ export function Pagination({
   page,
   totalPages,
   searchParams,
+  locale,
 }: {
   page: number;
   totalPages: number;
   searchParams: Record<string, string | undefined>;
+  locale: Locale;
 }) {
   if (totalPages <= 1) return null;
+  const t = translator(locale);
 
   const params = new URLSearchParams(
     Object.entries(searchParams).filter((entry): entry is [string, string] => Boolean(entry[1])),
@@ -22,21 +27,27 @@ export function Pagination({
   return (
     <nav className="flex items-center justify-center gap-4 pt-4 text-sm">
       {page > 1 ? (
-        <a href={buildHref(params, page - 1)} className="text-[var(--color-ink)] hover:text-[var(--color-accent)]">
-          ← Previous
+        <a
+          href={buildHref(params, page - 1)}
+          className="text-[var(--color-ink)] hover:text-[var(--color-accent)]"
+        >
+          {t("pagination.previous")}
         </a>
       ) : (
-        <span className="text-[var(--color-ink-muted)]">← Previous</span>
+        <span className="text-[var(--color-ink-muted)]">{t("pagination.previous")}</span>
       )}
       <span className="text-[var(--color-ink-muted)]">
-        Page {page} of {totalPages}
+        {t("pagination.position", { page, total: totalPages })}
       </span>
       {page < totalPages ? (
-        <a href={buildHref(params, page + 1)} className="text-[var(--color-ink)] hover:text-[var(--color-accent)]">
-          Next →
+        <a
+          href={buildHref(params, page + 1)}
+          className="text-[var(--color-ink)] hover:text-[var(--color-accent)]"
+        >
+          {t("pagination.next")}
         </a>
       ) : (
-        <span className="text-[var(--color-ink-muted)]">Next →</span>
+        <span className="text-[var(--color-ink-muted)]">{t("pagination.next")}</span>
       )}
     </nav>
   );

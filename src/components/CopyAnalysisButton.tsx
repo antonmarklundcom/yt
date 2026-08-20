@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { Analysis } from "@/db/schema";
+import { useTranslator } from "@/lib/i18n/client";
 
 function toPlainText(video: { title: string }, analysis: Analysis): string {
   const lines: string[] = [video.title, ""];
@@ -49,6 +50,7 @@ export function CopyAnalysisButton({
   video: { title: string };
   analysis: Analysis;
 }) {
+  const t = useTranslator();
   const [copied, setCopied] = useState(false);
 
   return (
@@ -59,9 +61,9 @@ export function CopyAnalysisButton({
         setCopied(true);
         setTimeout(() => setCopied(false), 1800);
       }}
-      className="surface-border rounded-[var(--radius-sm)] bg-[var(--color-surface-raised)] px-4 py-2 text-sm font-medium text-[var(--color-ink)] transition-colors hover:border-[var(--color-accent)]"
+      className="surface-border rounded-[var(--radius-sm)] bg-[var(--color-surface-raised)] px-4 py-2 text-sm font-medium text-[var(--color-ink)] transition-colors hover:border-[var(--color-accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
     >
-      {copied ? "Copied" : "Copy full analysis"}
+      {copied ? t("video.copied") : t("video.copyAnalysis")}
     </button>
   );
 }
