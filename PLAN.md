@@ -1,8 +1,10 @@
 # YouTube Intelligence Workspace — Build Plan
 
-**Status:** round 1 (PR-01 → PR-14), all of round 2 (PR-15 → PR-24), and PR-25
-merged, never deployed. **A0 — the caption gate, five migrations and the deploy — is the only thing
-left, and it needs credentials rather than code.** See `docs/HANDOFF-BATCH-C.md` §4.
+**Status:** round 1 (PR-01 → PR-14), all of round 2 (PR-15 → PR-24) and all of
+round 3 (PR-25 → PR-32) merged, never deployed. **A0 — the caption gate, six
+migrations and the deploy — is the only thing left, and it needs credentials
+rather than code.** See `docs/HANDOFF-BATCH-C.md` §4 for the sequence and
+`docs/HANDOFF-ROUND-3.md` for what round 3 changed and what is left.
 **Stack:** Next.js 15 (App Router) + TypeScript + Tailwind + Drizzle ORM + MySQL (Hostinger) + tsx
 **Deploy:** Hostinger Node.js slot, GitHub integration
 **Skills to read before coding:** `nodejs-mysql-hostinger-stack`, `nextjs-deploy-hostinger`, `web-design-system`
@@ -274,6 +276,23 @@ merge. One PR per row. Sequential *within* a batch (later rows touch the same fi
 | **23** | Session auth: `/login` (email + password, bcrypt hash column added to `users`), httpOnly cookie session, `getSession()` / `requireUser()` helpers, logout, seed script sets the owner password. Replaces nothing — Hostinger basic auth can stay on top or be dropped once this is verified live. |
 | **24** | Role gate: extend enum to `('owner','employee')` (migration from `admin`→`owner`, `user`→`employee`); `requireRole('owner')` at the top of every money-spending action (`submitIngest` analyse paths, `generateOutlineAction`) and destructive action (`removeSource`, delete video); employee keeps add/pause sources, metadata ingest, and all reads; hide owner-only buttons per role in the UI. **The permission boundary is spend, not CRUD.** |
 | **25** | Per-user read state: `read_at`/`pinned` move off `videos` into a `video_reads` table keyed `(video_id, user_id)` (migration 0006 backfills the existing rows to the owner before dropping the columns). PR-19 put them on `videos` because v1 was single-user; PR-24 created the second role, at which point an employee's reading marks the owner's. Built before the second account exists, not after. |
+
+### Round 3 — correctness and the gaps round 2 wrote down
+
+Unplanned rows, taken from the "ideas noticed, deliberately not built" lists in
+the Batch A and B handoffs. Everything here is code-only: no new credentials, no
+schema change beyond §10's pre-approved list.
+
+| PR | Scope |
+|---|---|
+| **25** | Per-user read state — `video_reads`, migration 0006 (see the Batch C row above). |
+| **26** | The spend cap counts committed-but-unbilled money: `committedUsd()` sums open batches, and `remaining`/`fraction`/`overCap`/`assertWithinCap` all measure against billed + committed. |
+| **27** | Batches unreadable for 72h are abandoned rather than retried forever, and their estimate is billed on the way out so giving up does not also forgive the charge. |
+| **28** | Bulk "analyse selected" on the feed — checkboxes, a live count and cost, one Batch API submission; ids re-filtered server-side, refused while a batch is open. |
+| **29** | Failed outline generations are visible (PR-16 stored them; the page filtered them out). |
+| **30** | Search says *why* a video matched — title vs. analysis, with an excerpt of the summary around the needle. |
+| **31** | `deleteVideo` runs in one transaction. |
+| **32** | Re-collecting a partially-written batch skips the rows it already wrote, instead of duplicating them and charging the spend counter twice. |
 
 ## 10. Rules for round-2 autonomous PRs
 

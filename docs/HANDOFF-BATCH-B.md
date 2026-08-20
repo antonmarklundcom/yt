@@ -121,7 +121,7 @@ in the order I would do them:
 4. **Search has no highlighting and no scope control.** A hit inside an
    analysis renders identically to a title match, so the reason a video matched
    is invisible. Returning the matched field from `matchesQuery` would fix both.
-5. **`/topics` still does not exist.** `topics` and `video_topics` are written
-   at analysis time and nothing reads them (PLAN.md §7). Now that the feed has
-   filters and sorting, a topic filter is the obvious next dimension and needs
-   no new infrastructure.
+5. **`/topics` still does not exist.** `topics` and `video_topics` are read by
+   nothing (PLAN.md §7). **Correction (round 3): nothing writes them either** —
+   the frozen analysis contract has no topics field, so this is not the small UI
+   job this line implied. See `docs/HANDOFF-ROUND-3.md` §3–§4.
