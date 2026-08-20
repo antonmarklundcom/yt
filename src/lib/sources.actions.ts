@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { sources } from "@/db/schema";
+import { requireOwner } from "@/lib/auth/session";
 import { upsertChannelSource, upsertPlaylistSource } from "@/lib/ingest/store";
 import { YouTubeDataClient } from "@/lib/youtube/data-api";
 import { parseYouTubeUrl } from "@/lib/youtube/url";
@@ -72,6 +73,9 @@ export async function setSourceActive(id: number, active: boolean): Promise<void
  * reads source_id except the per-source count.
  */
 export async function removeSource(id: number): Promise<void> {
+  // Adding and pausing sources are free and stay open to an employee; removing
+  // one throws away the poll cursor and the tracking itself, so it does not.
+  await requireOwner("remove a source");
   await db.delete(sources).where(eq(sources.id, id));
   revalidatePath("/sources");
 }

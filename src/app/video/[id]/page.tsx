@@ -7,6 +7,8 @@ import { latestAnalysisForVideo } from "@/lib/analysis/latest";
 import { DEFAULT_MODEL } from "@/lib/analysis/pricing";
 import { estimateAnalysisCostUsd, formatUsd } from "@/lib/spend";
 import { markVideoRead } from "@/lib/videos";
+import { isOwner } from "@/lib/auth/roles";
+import { getSession } from "@/lib/auth/session";
 import { getLocale } from "@/lib/i18n/server";
 import { translator, type Locale, type TranslationKey } from "@/lib/i18n";
 import { AnalyzeButton } from "@/components/AnalyzeButton";
@@ -45,6 +47,9 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
 
   const locale = await getLocale();
   const t = translator(locale);
+  // Owner-only controls are hidden rather than shown-and-refused. The server
+  // actions check for themselves regardless (src/lib/auth/roles.ts).
+  const canSpend = isOwner(await getSession());
 
   const rows = await db.select().from(videos).where(eq(videos.id, videoId)).limit(1);
   const video = rows[0];
@@ -64,7 +69,7 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
     .from(transcripts)
     .where(eq(transcripts.videoId, video.id))
     .limit(1);
-  const estimate = transcript
+  const estimate = canSpend && transcript
     ? {
         haiku: formatUsd(estimateAnalysisCostUsd(transcript.wordCount, DEFAULT_MODEL)),
         sonnet: formatUsd(estimateAnalysisCostUsd(transcript.wordCount, "claude-sonnet-5")),
@@ -103,7 +108,12 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
           >
             {t("video.watch")}
           </a>
-          <VideoReadControls videoId={video.id} pinned={video.pinned} locale={locale} />
+          <VideoReadControls
+            videoId={video.id}
+            pinned={video.pinned}
+            locale={locale}
+            canDelete={canSpend}
+          />
         </div>
       </div>
 
@@ -254,6 +264,7 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
                       ideaIndex={i}
                       videoId={video.id}
                       outline={outlineByIdeaIndex.get(i) ?? null}
+                      canGenerate={canSpend}
                     />
                   </li>
                 ))}

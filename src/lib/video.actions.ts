@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { analyses, outlines, transcripts, videos } from "@/db/schema";
+import { requireOwner } from "@/lib/auth/session";
 
 /**
  * Pinning is the counterweight to an unbounded feed: the corpus only grows, and
@@ -34,6 +35,10 @@ export async function setVideoUnread(videoId: number): Promise<void> {
  * their ids have to be collected before the analyses rows go.
  */
 export async function deleteVideo(videoId: number): Promise<void> {
+  // Reading, pinning and marking unread are free and stay open to an employee.
+  // Deleting destroys analyses the owner paid for, so it does not.
+  await requireOwner("delete a video");
+
   const analysisRows = await db
     .select({ id: analyses.id })
     .from(analyses)

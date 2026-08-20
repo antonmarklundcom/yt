@@ -13,10 +13,12 @@ export function VideoReadControls({
   videoId,
   pinned,
   locale,
+  canDelete,
 }: {
   videoId: number;
   pinned: boolean;
   locale: Locale;
+  canDelete: boolean;
 }) {
   const t = translator(locale);
 
@@ -32,14 +34,16 @@ export function VideoReadControls({
           {t("video.markUnread")}
         </button>
       </form>
-      <form action={deleteVideo.bind(null, videoId)}>
-        <ConfirmSubmitButton
-          message={t("video.deleteConfirm")}
-          className={`${BUTTON} text-[var(--color-danger)] hover:border-[var(--color-danger)]`}
-        >
-          {t("video.delete")}
-        </ConfirmSubmitButton>
-      </form>
+      {canDelete && (
+        <form action={deleteVideo.bind(null, videoId)}>
+          <ConfirmSubmitButton
+            message={t("video.deleteConfirm")}
+            className={`${BUTTON} text-[var(--color-danger)] hover:border-[var(--color-danger)]`}
+          >
+            {t("video.delete")}
+          </ConfirmSubmitButton>
+        </form>
+      )}
     </div>
   );
 }

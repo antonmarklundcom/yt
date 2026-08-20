@@ -21,18 +21,23 @@ export function IdeaOutline({
   ideaIndex,
   videoId,
   outline,
+  canGenerate,
 }: {
   analysisId: number;
   ideaIndex: number;
   videoId: number;
   outline: OutlinePayload | null;
+  canGenerate: boolean;
 }) {
   const t = useTranslator();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
+  // Generating an outline is a paid API call, so an employee sees nothing here
+  // rather than a button that will be refused (PR-24).
   if (!outline) {
+    if (!canGenerate) return null;
     return (
       <div className="mt-2 flex flex-col items-start gap-2">
         <button

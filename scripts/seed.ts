@@ -19,7 +19,8 @@ async function main(): Promise<void> {
   if (!email) {
     throw new Error(
       "ADMIN_EMAIL is not set. v1 has a single user (PLAN.md §0); this row exists " +
-        "so multi-user is a feature rather than a migration.",
+        "so multi-user is a feature rather than a migration. This user is seeded " +
+        "with role 'owner' — the only role that can spend money (PR-24).",
     );
   }
 
@@ -39,9 +40,9 @@ async function main(): Promise<void> {
   // after changing the role actually applies the change.
   await db
     .insert(users)
-    .values({ email, role: "admin", passwordHash })
+    .values({ email, role: "owner", passwordHash })
     .onDuplicateKeyUpdate({
-      set: passwordHash ? { role: "admin", passwordHash } : { role: "admin" },
+      set: passwordHash ? { role: "owner", passwordHash } : { role: "owner" },
     });
 
   const [rows] = await db.execute(

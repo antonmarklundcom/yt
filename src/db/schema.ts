@@ -50,7 +50,17 @@ import type {
 export const users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
   email: varchar("email", { length: 255 }).notNull().unique(),
-  role: mysqlEnum("role", ["admin", "user"]).notNull().default("user"),
+  /**
+   * [PR-24] owner spends money and deletes things; employee does neither.
+   *
+   * Renamed from admin/user because the boundary this enum actually encodes is
+   * not administration — it is spend. "admin/user" invites the reading that an
+   * employee is a lesser administrator; owner/employee says who pays.
+   *
+   * Default is the *lower* privilege: a row created without an explicit role
+   * must not be able to spend.
+   */
+  role: mysqlEnum("role", ["owner", "employee"]).notNull().default("employee"),
   /**
    * [PR-23] bcrypt hash, null until a password is set.
    *

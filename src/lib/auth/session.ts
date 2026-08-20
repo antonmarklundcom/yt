@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { users, type User } from "@/db/schema";
+import { ForbiddenError } from "./roles";
 import { createSessionToken, SESSION_COOKIE, SESSION_TTL_MS, verifySessionToken } from "./token";
 
 /**
@@ -59,5 +60,16 @@ export async function getSession(): Promise<User | null> {
 export async function requireUser(): Promise<User> {
   const user = await getSession();
   if (!user) redirect("/login");
+  return user;
+}
+
+/**
+ * The owner gate (PR-24). The UI hides owner-only controls, but hiding a button
+ * is presentation, not permission — a server action is a public endpoint and
+ * has to check for itself.
+ */
+export async function requireOwner(action: string): Promise<User> {
+  const user = await requireUser();
+  if (user.role !== "owner") throw new ForbiddenError(action);
   return user;
 }
