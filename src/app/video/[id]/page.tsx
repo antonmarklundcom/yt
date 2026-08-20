@@ -1,8 +1,11 @@
 import { and, eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { db } from "@/db";
-import { outlines, videos } from "@/db/schema";
+import { outlines, transcripts, videos } from "@/db/schema";
 import { latestAnalysisForVideo } from "@/lib/analysis/latest";
+import { DEFAULT_MODEL } from "@/lib/analysis/pricing";
+import { estimateAnalysisCostUsd, formatUsd } from "@/lib/spend";
+import { AnalyzeButton } from "@/components/AnalyzeButton";
 import { CaptionBadge } from "@/components/CaptionBadge";
 import { CopyAnalysisButton } from "@/components/CopyAnalysisButton";
 import { IdeaOutline } from "@/components/IdeaOutline";
@@ -18,6 +21,20 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
   if (!video) notFound();
 
   const analysis = await latestAnalysisForVideo(video.id);
+
+  // The estimate on the button needs the transcript's length, and its absence
+  // is also what decides whether analysing is possible at all.
+  const [transcript] = await db
+    .select({ wordCount: transcripts.wordCount })
+    .from(transcripts)
+    .where(eq(transcripts.videoId, video.id))
+    .limit(1);
+  const estimate = transcript
+    ? {
+        haiku: formatUsd(estimateAnalysisCostUsd(transcript.wordCount, DEFAULT_MODEL)),
+        sonnet: formatUsd(estimateAnalysisCostUsd(transcript.wordCount, "claude-sonnet-5")),
+      }
+    : null;
   const outlineRows =
     analysis && analysis.status === "ok"
       ? await db
@@ -53,13 +70,18 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
       </div>
 
       {!analysis && (
-        <div className="surface-border surface-card px-6 py-12 text-center">
-          <p className="text-[var(--color-ink)] font-medium">Not analysed yet</p>
-          <p className="mt-1 text-sm text-[var(--color-ink-muted)]">
-            {video.captionStatus === "available"
-              ? "A transcript is stored, but analysis has not run for this video."
-              : "This video has no stored transcript, so it cannot be analysed."}
-          </p>
+        <div className="surface-border surface-card flex flex-col items-center gap-4 px-6 py-12 text-center">
+          <div>
+            <p className="text-[var(--color-ink)] font-medium">Not analysed yet</p>
+            <p className="mt-1 text-sm text-[var(--color-ink-muted)]">
+              {estimate
+                ? "A transcript is stored, so this video can be analysed now."
+                : "This video has no stored transcript, so it cannot be analysed."}
+            </p>
+          </div>
+          {estimate && (
+            <AnalyzeButton videoId={video.id} label="Analyze now" estimate={estimate.haiku} />
+          )}
         </div>
       )}
 
@@ -74,12 +96,43 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
               {analysis.rawResponse}
             </pre>
           )}
+          {estimate && (
+            <div className="mt-5 flex flex-wrap gap-3">
+              {/* force: a failed row is not a success, but `analyzeVideo` only
+                  skips on a successful one, so this is belt-and-braces for the
+                  case where an older successful analysis exists behind it. */}
+              <AnalyzeButton
+                videoId={video.id}
+                label="Retry analysis"
+                estimate={estimate.haiku}
+                force
+              />
+              <AnalyzeButton
+                videoId={video.id}
+                label="Retry with Sonnet"
+                estimate={estimate.sonnet}
+                model="claude-sonnet-5"
+                variant="secondary"
+                force
+              />
+            </div>
+          )}
         </div>
       )}
 
       {analysis && analysis.status === "ok" && (
         <div className="flex flex-col gap-6">
-          <div className="flex justify-end">
+          <div className="flex flex-wrap items-start justify-end gap-3">
+            {estimate && analysis.model !== "claude-sonnet-5" && (
+              <AnalyzeButton
+                videoId={video.id}
+                label="Re-analyze with Sonnet"
+                estimate={estimate.sonnet}
+                model="claude-sonnet-5"
+                variant="secondary"
+                force
+              />
+            )}
             <CopyAnalysisButton video={video} analysis={analysis} />
           </div>
 

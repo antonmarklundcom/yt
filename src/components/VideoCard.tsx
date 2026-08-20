@@ -1,9 +1,11 @@
 import Link from "next/link";
-import type { Video } from "@/db/schema";
+import { analysisState } from "@/lib/analysis/state";
+import type { DigestVideo } from "@/lib/videos";
 import { formatCompactNumber, formatDate, formatDuration } from "@/lib/format";
+import { AnalysisBadge } from "./AnalysisBadge";
 import { CaptionBadge } from "./CaptionBadge";
 
-export function VideoCard({ video }: { video: Video }) {
+export function VideoCard({ video }: { video: DigestVideo }) {
   return (
     <Link
       href={`/video/${video.id}`}
@@ -33,9 +35,10 @@ export function VideoCard({ video }: { video: Video }) {
         <p className="text-xs text-[var(--color-ink-muted)]">
           {video.channelTitle ?? "Unknown channel"}
         </p>
-        <div className="mt-auto flex items-center justify-between pt-2">
+        <div className="mt-auto flex flex-wrap items-center gap-2 pt-2">
           <CaptionBadge status={video.captionStatus} />
-          <span className="text-xs text-[var(--color-ink-muted)]">
+          <AnalysisBadge state={analysisState(video.analysisStatus, video.captionStatus)} />
+          <span className="ml-auto text-xs text-[var(--color-ink-muted)]">
             {formatDate(video.publishedAt)} · {formatCompactNumber(video.viewCount)} views
           </span>
         </div>
