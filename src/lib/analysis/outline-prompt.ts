@@ -1,4 +1,4 @@
-import type { OutlinePayload } from "./contract";
+import { isDefaultLanguage, type OutlinePayload } from "./contract";
 
 /**
  * The outline prompt (PLAN.md §4's five-part structure). Versioned via
@@ -22,18 +22,27 @@ cta — What the viewer does next, specific to this video's content, not a gener
 
 Be concrete. Write actual lines and beats, not descriptions of what a section should contain.`;
 
+/**
+ * Same contract as buildUserPrompt: absent or "en" produces exactly the string
+ * this returned before PR-22b.
+ */
 export function buildOutlineUserPrompt(input: {
   videoTitle: string;
   ideaTitle: string;
   ideaPremise: string;
   ideaWhyNow: string;
+  language?: string;
 }): string {
-  return [
+  const base = [
     `Source video: ${input.videoTitle}`,
     `Idea: ${input.ideaTitle}`,
     `Premise: ${input.ideaPremise}`,
     `Why now: ${input.ideaWhyNow}`,
   ].join("\n");
+
+  return isDefaultLanguage(input.language)
+    ? base
+    : `${base}\n\nWrite the outline in ${input.language}.`;
 }
 
 export const OUTLINE_JSON_SCHEMA = {

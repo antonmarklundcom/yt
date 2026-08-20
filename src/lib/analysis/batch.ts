@@ -67,6 +67,11 @@ export async function submitAnalysisBatch(
   // Throws SpendCapExceededError before a single request is sent.
   await assertWithinCap(estimatedUsd);
 
+  // The batch path stays English-only, deliberately (PR-22b). prompt_version is
+  // written at *collection* time, and a collecting run has no memory of what the
+  // submitting run asked for — making the batch multilingual means storing the
+  // language on `batches`, which is a schema change this PR is not approved to
+  // make. Whoever adds the language UI adds that column with it.
   const requests = usable.map((video) => {
     const transcript = byVideoId.get(video.id)!;
     return {

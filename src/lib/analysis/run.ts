@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { analyses, transcripts, videos, type Analysis, type Video } from "@/db/schema";
-import { ANALYSIS_PROMPT_VERSION, type AnalysisPayload } from "./contract";
+import { analysisPromptVersion, ANALYSIS_PROMPT_VERSION, type AnalysisPayload } from "./contract";
 import { parseAnalysisResponse } from "./parse";
 import {
   DEFAULT_MODEL,
@@ -40,6 +40,12 @@ export type AnalyzeOptions = {
   model?: AnalysisModel;
   /** Analyse again even when a successful analysis already exists. */
   force?: boolean;
+  /**
+   * Output language (PR-22b). Absent or "en" produces byte-identical prompts to
+   * every analysis already stored, and keeps prompt_version at 1. Nothing sets
+   * this yet — there is no UI and no setting.
+   */
+  language?: string;
 };
 
 export type AnalyzeResult =
@@ -52,6 +58,7 @@ export async function analyzeVideo(
   options: AnalyzeOptions = {},
 ): Promise<AnalyzeResult> {
   const model = options.model ?? DEFAULT_MODEL;
+  const promptVersion = analysisPromptVersion(options.language);
 
   if (!options.force) {
     const [existing] = await db
@@ -101,6 +108,7 @@ export async function analyzeVideo(
             channelTitle: video.channelTitle,
             durationSeconds: video.durationSeconds,
             transcript: transcript.content,
+            language: options.language,
           }),
         },
       ],
@@ -113,6 +121,7 @@ export async function analyzeVideo(
     const row = await insertAnalysis({
       videoId: video.id,
       model,
+      promptVersion,
       status: "failed",
       error: `api error: ${message}`.slice(0, 1024),
       usage: EMPTY_USAGE,
@@ -131,6 +140,7 @@ export async function analyzeVideo(
     const row = await insertAnalysis({
       videoId: video.id,
       model,
+      promptVersion,
       status: "failed",
       error: `response hit max_tokens (${MAX_OUTPUT_TOKENS}); output truncated`,
       rawResponse: raw,
@@ -147,6 +157,7 @@ export async function analyzeVideo(
     const row = await insertAnalysis({
       videoId: video.id,
       model,
+      promptVersion,
       status: "failed",
       error: parsed.error.slice(0, 1024),
       rawResponse: raw,
@@ -159,6 +170,7 @@ export async function analyzeVideo(
   const row = await insertAnalysis({
     videoId: video.id,
     model,
+    promptVersion,
     status: "ok",
     payload: parsed.payload,
     rawResponse: raw,
@@ -200,6 +212,8 @@ function textOf(response: Anthropic.Message): string {
 export async function insertAnalysis(input: {
   videoId: number;
   model: AnalysisModel;
+  /** Defaults to the English prompt's version; see analysisPromptVersion(). */
+  promptVersion?: number;
   status: "ok" | "failed";
   payload?: AnalysisPayload;
   rawResponse?: string;
@@ -213,7 +227,7 @@ export async function insertAnalysis(input: {
   const [result] = await db.insert(analyses).values({
     videoId: input.videoId,
     model: input.model,
-    promptVersion: ANALYSIS_PROMPT_VERSION,
+    promptVersion: input.promptVersion ?? ANALYSIS_PROMPT_VERSION,
     status: input.status,
     summary: payload?.summary ?? null,
     takeaways: payload?.takeaways ?? null,
