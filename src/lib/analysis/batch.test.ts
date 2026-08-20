@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { batchFailureReason, mapProviderStatus } from "./batch";
+import { batchFailureReason, isStaleBatch, mapProviderStatus, STALE_BATCH_HOURS } from "./batch";
 
 /**
  * The regression these guard: `entry.result.error` is an ErrorResponse envelope
@@ -55,4 +55,40 @@ test("only 'ended' is collectable; canceling stays open so paid results are not 
   assert.equal(mapProviderStatus("ended"), "ended");
   assert.equal(mapProviderStatus("in_progress"), "in_progress");
   assert.equal(mapProviderStatus("canceling"), "in_progress");
+});
+
+/**
+ * PR-27: an unreadable batch row used to be retried on every poll forever. Since
+ * PR-26 it also holds its estimate against the monthly cap, so "harmless noise"
+ * became "eventually refuses all work". The cutoff decides when to give up, and
+ * being wrong in the early direction discards results that were paid for.
+ */
+
+const HOUR = 3_600_000;
+
+test("a batch is not stale until the cutoff has fully elapsed", () => {
+  const submitted = new Date("2026-08-01T00:00:00Z");
+  const at = (hours: number) => new Date(submitted.getTime() + hours * HOUR);
+
+  // The provider's own ceiling is 24 hours: a batch that is merely late must
+  // stay open, because its results are still readable and already paid for.
+  assert.equal(isStaleBatch(submitted, at(1)), false);
+  assert.equal(isStaleBatch(submitted, at(24)), false);
+  assert.equal(isStaleBatch(submitted, at(71.9)), false);
+  assert.equal(isStaleBatch(submitted, at(STALE_BATCH_HOURS)), true, "exactly at the cutoff");
+  assert.equal(isStaleBatch(submitted, at(240)), true);
+});
+
+test("clock skew backwards never makes a batch stale", () => {
+  // submitted_at is written by MySQL and compared against this process's clock;
+  // if they disagree the answer must fail towards "keep waiting".
+  const submitted = new Date("2026-08-01T00:00:00Z");
+  assert.equal(isStaleBatch(submitted, new Date("2026-07-31T00:00:00Z")), false);
+});
+
+test("the cutoff is configurable per call, for tests and for tuning", () => {
+  const submitted = new Date("2026-08-01T00:00:00Z");
+  const twoHoursLater = new Date(submitted.getTime() + 2 * HOUR);
+  assert.equal(isStaleBatch(submitted, twoHoursLater, 1), true);
+  assert.equal(isStaleBatch(submitted, twoHoursLater, 3), false);
 });

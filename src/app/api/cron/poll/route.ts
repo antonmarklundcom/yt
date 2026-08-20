@@ -89,6 +89,9 @@ function summarize(result: PollResult): { summary: string } {
   for (const c of result.collected) {
     parts.push(`collected ${c.batchId} (${c.outcome.succeeded} ok, ${c.outcome.failed} failed)`);
   }
+  for (const a of result.abandoned) {
+    parts.push(`abandoned ${a.batchId} (unreadable, billed ${a.estimatedUsd.toFixed(4)})`);
+  }
   parts.push(
     result.submitted
       ? `submitted ${result.submitted.batchId} (${result.submitted.videoCount} video(s))`

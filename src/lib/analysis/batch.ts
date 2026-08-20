@@ -2,7 +2,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { eq, inArray, notInArray } from "drizzle-orm";
 import { db } from "@/db";
 import { batches, transcripts, videos, type Batch, type Video } from "@/db/schema";
-import { assertWithinCap, estimateBatchCostUsd } from "@/lib/spend";
+import { assertWithinCap, estimateBatchCostUsd, recordSpend } from "@/lib/spend";
 import { parseAnalysisResponse } from "./parse";
 import { DEFAULT_MODEL, estimateCostUsd, isAnalysisModel, toCostString, type AnalysisModel } from "./pricing";
 import { ANALYSIS_JSON_SCHEMA, ANALYSIS_SYSTEM_PROMPT, buildUserPrompt } from "./prompt";
@@ -152,6 +152,44 @@ export async function openBatches(): Promise<Batch[]> {
     .select()
     .from(batches)
     .where(notInArray(batches.status, ["collected", "canceled"]));
+}
+
+/**
+ * How long an unreadable batch stays open before the poller gives up on it.
+ *
+ * The provider's own ceiling for a batch is 24 hours and results are retained
+ * for 29 days; a row this app cannot read for three days is not late, it is
+ * gone — deleted server-side, or submitted against a key that no longer sees
+ * it. Before PR-26 a stranded row cost one failed retrieve per run. Now it also
+ * holds its estimate against the monthly cap forever, which eventually refuses
+ * all work.
+ */
+export const STALE_BATCH_HOURS = 72;
+
+/** Pure so the cutoff is testable without a clock or a database. */
+export function isStaleBatch(
+  submittedAt: Date,
+  now: Date = new Date(),
+  hours: number = STALE_BATCH_HOURS,
+): boolean {
+  return now.getTime() - submittedAt.getTime() >= hours * 3_600_000;
+}
+
+/**
+ * Give up on a batch whose results can no longer be read.
+ *
+ * The estimate is written to `spend_log` on the way out rather than discarded.
+ * A submitted batch was almost certainly charged by the provider, so dropping
+ * the row from `committedUsd()` without billing it would quietly hand back
+ * money that was really spent — the cap would forgive a real charge. Recording
+ * before marking means a crash in between re-runs the record, which over-counts
+ * rather than under-counts; that is the safe direction for a guard.
+ */
+export async function abandonStaleBatch(row: Batch): Promise<number> {
+  const estimated = Number(row.estimatedUsd) || 0;
+  await recordSpend(estimated);
+  await markBatchStatus(row.providerBatchId, "canceled");
+  return estimated;
 }
 
 export async function markBatchStatus(

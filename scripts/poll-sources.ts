@@ -18,6 +18,7 @@
  */
 
 import { closeDb } from "../src/db";
+import { STALE_BATCH_HOURS } from "../src/lib/analysis/batch";
 import { pollSources } from "../src/lib/poll";
 import { formatUsd } from "../src/lib/spend";
 
@@ -60,6 +61,14 @@ async function main(): Promise<void> {
             `\nCollected batch ${event.batchId}: ${event.outcome.succeeded} ok · ` +
               `${event.outcome.failed} failed · ${event.outcome.expired} expired · ` +
               `actual ${formatUsd(event.outcome.actualUsd)}`,
+          );
+          break;
+        case "batch-abandoned":
+          console.error(
+            `\nGave up on batch ${event.batchId} — unreadable for over ` +
+              `${STALE_BATCH_HOURS}h (${event.message}). Its estimate ` +
+              `${formatUsd(event.estimatedUsd)} was written to the spend log, since the ` +
+              `provider almost certainly charged for it.`,
           );
           break;
         case "pending":
