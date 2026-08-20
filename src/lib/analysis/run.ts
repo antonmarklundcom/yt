@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { analyses, transcripts, videos, type Analysis, type Video } from "@/db/schema";
 import { analysisPromptVersion, ANALYSIS_PROMPT_VERSION, type AnalysisPayload } from "./contract";
@@ -267,6 +267,33 @@ export async function insertAnalysis(input: {
  * (append-only, plus failed retries), and a join would emit one row per
  * analysis and need de-duplicating in code.
  */
+/**
+ * The same "pending" definition as findPendingVideos, restricted to an explicit
+ * set of ids (PR-28).
+ *
+ * Bulk analysis takes its ids from a form, which is a public endpoint: the
+ * filter is what stops a hand-edited request from re-paying for videos that are
+ * already analysed, or from submitting ones with no transcript at all.
+ */
+export async function findPendingVideosByIds(ids: number[]): Promise<Video[]> {
+  if (ids.length === 0) return [];
+  return db
+    .select()
+    .from(videos)
+    .where(
+      and(
+        inArray(videos.id, ids),
+        eq(videos.captionStatus, "available"),
+        sql`exists (select 1 from ${transcripts} where ${transcripts.videoId} = ${videos.id})`,
+        sql`not exists (
+          select 1 from ${analyses}
+          where ${analyses.videoId} = ${videos.id} and ${analyses.status} = 'ok'
+        )`,
+      ),
+    )
+    .orderBy(desc(videos.publishedAt));
+}
+
 export async function findPendingVideos(limit = 50): Promise<Video[]> {
   return db
     .select()

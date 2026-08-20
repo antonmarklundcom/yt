@@ -1,5 +1,9 @@
 import type { Metadata } from "next";
+import { isOwner } from "@/lib/auth/roles";
 import { requireUser } from "@/lib/auth/session";
+import { DEFAULT_MODEL } from "@/lib/analysis/pricing";
+import { estimateAnalysisCostUsd } from "@/lib/spend";
+import { BulkAnalyzeForm, SelectVideoCheckbox } from "@/components/BulkAnalyzeForm";
 import { getLocale } from "@/lib/i18n/server";
 import { translator } from "@/lib/i18n";
 import { DigestFilters } from "@/components/DigestFilters";
@@ -50,6 +54,24 @@ export default async function Home({
   });
   const hasFilters = q !== "" || status !== undefined || filter !== undefined;
 
+  // What a bulk selection would cost, priced per video from its transcript
+  // length (PR-28). Only videos that could actually be submitted get an entry:
+  // no transcript, or already analysed, means nothing to select. The action
+  // re-checks all of this server-side — this map is for the estimate and the
+  // checkbox, not for permission.
+  const canSpend = isOwner(user);
+  const estimates: Record<number, number> = {};
+  if (canSpend) {
+    for (const video of result.videos) {
+      if (video.analysisStatus === "ok") continue;
+      if (!video.transcriptWords) continue;
+      estimates[video.id] = estimateAnalysisCostUsd(video.transcriptWords, DEFAULT_MODEL, {
+        batch: true,
+      });
+    }
+  }
+  const selectable = Object.keys(estimates).length > 0;
+
   return (
     <main className="mx-auto max-w-5xl px-6 py-10">
       <div className="mb-6 flex flex-col gap-4">
@@ -81,11 +103,28 @@ export default async function Home({
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {result.videos.map((video) => (
-              <VideoCard key={video.id} video={video} locale={locale} />
-            ))}
-          </div>
+          {(() => {
+            const grid = (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {result.videos.map((video) => (
+                  <div key={video.id} className="relative">
+                    {estimates[video.id] !== undefined && (
+                      <SelectVideoCheckbox videoId={video.id} title={video.title} />
+                    )}
+                    <VideoCard video={video} locale={locale} />
+                  </div>
+                ))}
+              </div>
+            );
+            // The form only exists when there is something to submit: an
+            // employee, or a page where every video is analysed, gets the plain
+            // grid rather than a bar that can only say "nothing selected".
+            return selectable ? (
+              <BulkAnalyzeForm estimates={estimates}>{grid}</BulkAnalyzeForm>
+            ) : (
+              grid
+            );
+          })()}
           <Pagination
             page={result.page}
             totalPages={result.totalPages}
