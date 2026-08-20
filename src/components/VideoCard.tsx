@@ -58,6 +58,14 @@ export function VideoCard({ video, locale }: { video: DigestVideo; locale: Local
         <p className="text-xs text-[var(--color-ink-muted)]">
           {video.channelTitle ?? t("video.unknownChannel")}
         </p>
+        {/* Why this card is in the results (PR-30). A hit inside an analysis
+            used to look identical to a title match, which made the reason for
+            half the results invisible. */}
+        {video.match?.field === "analysis" && (
+          <p className="border-l-2 border-[var(--color-accent)] pl-2 text-xs text-[var(--color-ink-muted)] italic">
+            {video.match.excerpt ?? t("card.matchedAnalysis")}
+          </p>
+        )}
         <div className="mt-auto flex flex-wrap items-center gap-2 pt-2">
           <CaptionBadge status={video.captionStatus} locale={locale} />
           <AnalysisBadge

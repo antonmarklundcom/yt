@@ -70,6 +70,7 @@ export const en = {
 
   "card.unread": "Unread",
   "card.pinned": "Pinned",
+  "card.matchedAnalysis": "Matched inside the analysis",
   "card.views": "views",
   "card.noThumbnail": "No thumbnail",
 
@@ -257,6 +258,7 @@ export const sv: Record<TranslationKey, string> = {
 
   "card.unread": "Oläst",
   "card.pinned": "Fäst",
+  "card.matchedAnalysis": "Träff inne i analysen",
   "card.views": "visningar",
   "card.noThumbnail": "Ingen miniatyrbild",
 
