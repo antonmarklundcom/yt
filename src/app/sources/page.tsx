@@ -5,6 +5,8 @@ import { SourceTitleForm } from "@/components/SourceTitleForm";
 import { removeSource, setSourceActive } from "@/lib/sources.actions";
 import { listSourcesWithCounts } from "@/lib/sources";
 import { formatDate } from "@/lib/format";
+import { isOwner } from "@/lib/auth/roles";
+import { getSession } from "@/lib/auth/session";
 import { getLocale } from "@/lib/i18n/server";
 import { translator } from "@/lib/i18n";
 
@@ -16,8 +18,14 @@ const BUTTON =
   "surface-border rounded-[var(--radius-sm)] px-3 py-1.5 text-xs font-medium text-[var(--color-ink)] hover:border-[var(--color-accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]";
 
 export default async function SourcesPage() {
-  const [rows, locale] = await Promise.all([listSourcesWithCounts(), getLocale()]);
+  const [rows, locale, user] = await Promise.all([
+    listSourcesWithCounts(),
+    getLocale(),
+    getSession(),
+  ]);
   const t = translator(locale);
+  // Adding and pausing stay open to an employee; removing does not.
+  const canRemove = isOwner(user);
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-10">
@@ -56,14 +64,16 @@ export default async function SourcesPage() {
                       {t(source.active ? "sources.pause" : "sources.resume")}
                     </button>
                   </form>
-                  <form action={removeSource.bind(null, source.id)}>
-                    <ConfirmSubmitButton
-                      message={t("sources.removeConfirm")}
-                      className={`${BUTTON} text-[var(--color-danger)] hover:border-[var(--color-danger)]`}
-                    >
-                      {t("sources.remove")}
-                    </ConfirmSubmitButton>
-                  </form>
+                  {canRemove && (
+                    <form action={removeSource.bind(null, source.id)}>
+                      <ConfirmSubmitButton
+                        message={t("sources.removeConfirm")}
+                        className={`${BUTTON} text-[var(--color-danger)] hover:border-[var(--color-danger)]`}
+                      >
+                        {t("sources.remove")}
+                      </ConfirmSubmitButton>
+                    </form>
+                  )}
                 </div>
               </div>
             </li>

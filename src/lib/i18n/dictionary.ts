@@ -181,6 +181,9 @@ export const en = {
   "login.signIn": "Sign in",
   "login.signingIn": "Signing in…",
   "login.signOut": "Sign out",
+
+  "role.employeeIngestNote":
+    "You are signed in as an employee: videos you add are stored, but only the owner can start an analysis.",
 } as const;
 
 export type TranslationKey = keyof typeof en;
@@ -354,6 +357,9 @@ export const sv: Record<TranslationKey, string> = {
   "login.signIn": "Logga in",
   "login.signingIn": "Loggar in…",
   "login.signOut": "Logga ut",
+
+  "role.employeeIngestNote":
+    "Du är inloggad som anställd: videor du lägger till sparas, men bara ägaren kan starta en analys.",
 };
 
 export const DICTIONARIES = { en, sv } as const;

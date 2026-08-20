@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { transcripts, videos } from "@/db/schema";
 import { analyzeVideo } from "@/lib/analysis/run";
+import { ForbiddenError } from "@/lib/auth/roles";
+import { requireOwner } from "@/lib/auth/session";
 import { DEFAULT_MODEL, isAnalysisModel } from "@/lib/analysis/pricing";
 import {
   assertWithinCap,
@@ -38,6 +40,8 @@ export async function analyzeVideoAction(
   const model = options.model && isAnalysisModel(options.model) ? options.model : DEFAULT_MODEL;
 
   try {
+    await requireOwner("start an analysis");
+
     const [video] = await db.select().from(videos).where(eq(videos.id, videoId)).limit(1);
     if (!video) return { ok: false, error: "No such video." };
 
@@ -68,6 +72,7 @@ export async function analyzeVideoAction(
     }
     return { ok: false, error: result.error };
   } catch (err) {
+    if (err instanceof ForbiddenError) return { ok: false, error: err.message };
     if (err instanceof SpendCapExceededError) return { ok: false, error: err.message };
     return { ok: false, error: err instanceof Error ? err.message : "Analysis failed." };
   }

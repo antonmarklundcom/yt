@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { transcripts, type Video } from "@/db/schema";
 import { analyzeVideo } from "@/lib/analysis/run";
+import { isOwner } from "@/lib/auth/roles";
+import { getSession } from "@/lib/auth/session";
 import { DEFAULT_MODEL } from "@/lib/analysis/pricing";
 import { assertWithinCap, estimateAnalysisCostUsd, formatUsd, SpendCapExceededError } from "@/lib/spend";
 import { ingestUrl } from "@/lib/ingest";
@@ -37,6 +39,11 @@ export async function submitIngest(
   if (!url) return { ok: false, tone: "error", error: "Paste a YouTube URL." };
   const ref = parseYouTubeUrl(url);
   if (!ref) return { ok: false, tone: "error", error: "Not a recognisable YouTube URL." };
+
+  // PLAN.md §9 PR-24: an employee keeps metadata ingest — it is free — but the
+  // analyse step at the end of the single-video path spends money, so for them
+  // this action stops after storing the video.
+  const canSpend = isOwner(await getSession());
 
   try {
     if (ref.kind !== "video" && transcriptText) {
@@ -86,6 +93,15 @@ export async function submitIngest(
           `Ingested ${summary.videos.length} video(s). Captions: ` +
           `${summary.captionCounts.available} available, ${summary.captionCounts.none} none, ` +
           `${summary.captionCounts.failed} failed. Analyse them from the digest feed.`,
+      };
+    }
+
+    if (!canSpend) {
+      revalidatePath("/");
+      return {
+        ok: true,
+        tone: "info",
+        message: `Ingested "${video.title}". Analysis has to be started by the owner.`,
       };
     }
 

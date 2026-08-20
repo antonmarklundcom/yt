@@ -12,6 +12,10 @@ import { parseYouTubeUrl } from "@/lib/youtube/url";
  * run from a hung one. A server action cannot stream — it resolves once — so
  * progress needs a route handler and NDJSON.
  *
+ * Bulk ingest costs nothing (metadata and captions are free), so it stays open
+ * to an employee under PLAN.md §9 PR-24 — the route is behind the session
+ * middleware, which is the check it needs. It never analyses.
+ *
  * Single videos deliberately do NOT come here. That path also analyses, which
  * means a spend check, and duplicating that in a second place is how the two
  * drift apart.
