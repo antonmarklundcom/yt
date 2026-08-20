@@ -1,10 +1,12 @@
+import { translator, type Locale } from "@/lib/i18n";
 import { formatUsd, type SpendStatus } from "@/lib/spend";
 
 /**
  * Renders the cap, not just the spend (docs/HANDOFF-SONNET.md §6, PR-08 row) —
  * "$3.40" alone tells you nothing without the ceiling it is measured against.
  */
-export function SpendMeter({ status }: { status: SpendStatus }) {
+export function SpendMeter({ status, locale }: { status: SpendStatus; locale: Locale }) {
+  const t = translator(locale);
   const pct = Math.min(100, Math.round(status.fraction * 100));
   const barColor = status.overCap
     ? "bg-[var(--color-danger)]"
@@ -13,7 +15,7 @@ export function SpendMeter({ status }: { status: SpendStatus }) {
       : "bg-[var(--color-accent)]";
 
   return (
-    <div className="flex flex-col gap-1.5" title={`${formatUsd(status.monthToDateUsd)} of ${formatUsd(status.capUsd)} spent this month`}>
+    <div className="flex flex-col gap-1.5" title={`${formatUsd(status.monthToDateUsd)} / ${formatUsd(status.capUsd)} ${t("spend.tooltip")}`}>
       <div className="flex items-baseline gap-1.5 text-sm">
         <span className="font-medium text-[var(--color-ink)]">
           {formatUsd(status.monthToDateUsd)}

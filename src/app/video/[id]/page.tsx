@@ -7,6 +7,8 @@ import { latestAnalysisForVideo } from "@/lib/analysis/latest";
 import { DEFAULT_MODEL } from "@/lib/analysis/pricing";
 import { estimateAnalysisCostUsd, formatUsd } from "@/lib/spend";
 import { markVideoRead } from "@/lib/videos";
+import { getLocale } from "@/lib/i18n/server";
+import { translator, type Locale, type TranslationKey } from "@/lib/i18n";
 import { AnalyzeButton } from "@/components/AnalyzeButton";
 import { VideoReadControls } from "@/components/VideoReadControls";
 import { CaptionBadge } from "@/components/CaptionBadge";
@@ -40,6 +42,9 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
   const { id } = await params;
   const videoId = Number(id);
   if (!Number.isInteger(videoId)) notFound();
+
+  const locale = await getLocale();
+  const t = translator(locale);
 
   const rows = await db.select().from(videos).where(eq(videos.id, videoId)).limit(1);
   const video = rows[0];
@@ -80,10 +85,10 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
     <main className="mx-auto max-w-3xl px-6 py-10">
       <div className="mb-6 flex flex-col gap-3">
         <div className="flex items-center gap-3">
-          <CaptionBadge status={video.captionStatus} />
+          <CaptionBadge status={video.captionStatus} locale={locale} />
           <span className="text-xs text-[var(--color-ink-muted)]">
-            {video.channelTitle ?? "Unknown channel"} · {formatDate(video.publishedAt)} ·{" "}
-            {formatDuration(video.durationSeconds)}
+            {video.channelTitle ?? t("video.unknownChannel")} ·{" "}
+            {formatDate(video.publishedAt, locale)} · {formatDuration(video.durationSeconds)}
           </span>
         </div>
         <h1 className="text-2xl font-semibold text-balance text-[var(--color-ink)]">
@@ -96,40 +101,43 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
             rel="noreferrer"
             className="text-sm text-[var(--color-accent)] hover:underline"
           >
-            Watch on YouTube ↗
+            {t("video.watch")}
           </a>
-          <VideoReadControls videoId={video.id} pinned={video.pinned} />
+          <VideoReadControls videoId={video.id} pinned={video.pinned} locale={locale} />
         </div>
       </div>
 
       {!analysis && (
         <div className="surface-border surface-card flex flex-col items-center gap-4 px-6 py-12 text-center">
           <div>
-            <p className="text-[var(--color-ink)] font-medium">Not analysed yet</p>
+            <p className="text-[var(--color-ink)] font-medium">{t("video.notAnalysed.title")}</p>
             <p className="mt-1 text-sm text-[var(--color-ink-muted)]">
-              {estimate
-                ? "A transcript is stored, so this video can be analysed now."
-                : "This video has no stored transcript, so it cannot be analysed."}
+              {t(estimate ? "video.notAnalysed.ready" : "video.notAnalysed.noTranscript")}
             </p>
           </div>
           {estimate && (
-            <AnalyzeButton videoId={video.id} label="Analyze now" estimate={estimate.haiku} />
+            <AnalyzeButton
+              videoId={video.id}
+              labelKey="video.analyzeNow"
+              estimate={estimate.haiku}
+              locale={locale}
+            />
           )}
         </div>
       )}
 
       {analysis && analysis.status === "failed" && (
         <div className="surface-border surface-card px-6 py-8">
-          <p className="font-medium text-[var(--color-danger)]">Analysis failed</p>
+          <p className="font-medium text-[var(--color-danger)]">{t("video.failed.title")}</p>
           <p className="mt-2 text-sm text-[var(--color-ink-muted)]">
-            {analysis.error ?? "No error message was recorded."}
+            {analysis.error ?? t("video.failed.noMessage")}
           </p>
           {analysis.rawResponse && (
             <div className="mt-4 flex flex-col items-start gap-2">
               <pre className="surface-border max-h-64 w-full overflow-auto rounded-[var(--radius-sm)] bg-[var(--color-surface)] p-3 text-xs text-[var(--color-ink-muted)]">
                 {analysis.rawResponse}
               </pre>
-              <CopyTextButton text={analysis.rawResponse} label="Copy raw response" />
+              <CopyTextButton text={analysis.rawResponse} label={t("video.copyRaw")} />
             </div>
           )}
           {estimate && (
@@ -139,14 +147,16 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
                   case where an older successful analysis exists behind it. */}
               <AnalyzeButton
                 videoId={video.id}
-                label="Retry analysis"
+                labelKey="video.retry"
                 estimate={estimate.haiku}
+                locale={locale}
                 force
               />
               <AnalyzeButton
                 videoId={video.id}
-                label="Retry with Sonnet"
+                labelKey="video.retrySonnet"
                 estimate={estimate.sonnet}
+                locale={locale}
                 model="claude-sonnet-5"
                 variant="secondary"
                 force
@@ -162,8 +172,9 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
             {estimate && analysis.model !== "claude-sonnet-5" && (
               <AnalyzeButton
                 videoId={video.id}
-                label="Re-analyze with Sonnet"
+                labelKey="video.reanalyseSonnet"
                 estimate={estimate.sonnet}
+                locale={locale}
                 model="claude-sonnet-5"
                 variant="secondary"
                 force
@@ -173,7 +184,7 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
           </div>
 
           {analysis.summary && (
-            <Section title="Summary">
+            <Section titleKey="section.summary" locale={locale}>
               <p className="text-sm leading-relaxed text-[var(--color-ink)]">{analysis.summary}</p>
               {!!analysis.takeaways?.length && (
                 <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-[var(--color-ink-muted)]">
@@ -186,17 +197,17 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
           )}
 
           {analysis.hookBreakdown && (
-            <Section title="Hook">
+            <Section titleKey="section.hook" locale={locale}>
               <dl className="grid grid-cols-1 gap-3 text-sm">
-                <Field label="Technique" value={analysis.hookBreakdown.technique} />
-                <Field label="First 30 seconds" value={analysis.hookBreakdown.first_30s} />
-                <Field label="Why it works" value={analysis.hookBreakdown.why_it_works} />
+                <Field label={t("hook.technique")} value={analysis.hookBreakdown.technique} />
+                <Field label={t("hook.first30s")} value={analysis.hookBreakdown.first_30s} />
+                <Field label={t("hook.whyItWorks")} value={analysis.hookBreakdown.why_it_works} />
               </dl>
             </Section>
           )}
 
           {!!analysis.timeline?.length && (
-            <Section title="Timeline">
+            <Section titleKey="section.timeline" locale={locale}>
               <ol className="flex flex-col gap-3">
                 {analysis.timeline.map((entry, i) => (
                   <li key={i} className="flex gap-3 text-sm">
@@ -214,12 +225,14 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
           )}
 
           {!!analysis.gaps?.length && (
-            <Section title="Gaps">
+            <Section titleKey="section.gaps" locale={locale}>
               <ul className="flex flex-col gap-3">
                 {analysis.gaps.map((g, i) => (
                   <li key={i} className="text-sm">
                     <p className="text-[var(--color-ink)]">{g.gap}</p>
-                    <p className="text-[var(--color-ink-muted)]">Counter-angle: {g.counter_angle}</p>
+                    <p className="text-[var(--color-ink-muted)]">
+                      {t("gaps.counterAngle")}: {g.counter_angle}
+                    </p>
                   </li>
                 ))}
               </ul>
@@ -227,14 +240,14 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
           )}
 
           {!!analysis.ideas?.length && (
-            <Section title="Ideas">
+            <Section titleKey="section.ideas" locale={locale}>
               <ul className="flex flex-col gap-4">
                 {analysis.ideas.map((idea, i) => (
                   <li key={i} className="surface-border rounded-[var(--radius-sm)] p-3">
                     <p className="font-medium text-[var(--color-ink)]">{idea.title}</p>
                     <p className="mt-1 text-sm text-[var(--color-ink-muted)]">{idea.premise}</p>
                     <p className="mt-1 text-xs text-[var(--color-ink-muted)]">
-                      Why now: {idea.why_now}
+                      {t("ideas.whyNow")}: {idea.why_now}
                     </p>
                     <IdeaOutline
                       analysisId={analysis.id}
@@ -253,11 +266,19 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  titleKey,
+  locale,
+  children,
+}: {
+  titleKey: TranslationKey;
+  locale: Locale;
+  children: React.ReactNode;
+}) {
   return (
     <section className="surface-border surface-card p-5">
       <h2 className="mb-3 text-xs font-medium tracking-widest text-[var(--color-accent)] uppercase">
-        {title}
+        {translator(locale)(titleKey)}
       </h2>
       {children}
     </section>

@@ -9,5 +9,5 @@ export default function DigestError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  return <ErrorPanel title="The digest could not be loaded" error={error} reset={reset} />;
+  return <ErrorPanel titleKey="error.digest.title" error={error} reset={reset} />;
 }

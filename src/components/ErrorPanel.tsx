@@ -1,5 +1,8 @@
 "use client";
 
+import { useTranslator } from "@/lib/i18n/client";
+import type { TranslationKey } from "@/lib/i18n";
+
 /**
  * The body of every route's error.tsx (PLAN.md §9 PR-18).
  *
@@ -10,25 +13,27 @@
  * gets the reason and a retry that re-runs the server render.
  */
 export function ErrorPanel({
-  title,
+  titleKey,
   error,
   reset,
 }: {
-  title: string;
+  titleKey: TranslationKey;
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const t = useTranslator();
+
   return (
     <main className="mx-auto max-w-3xl px-6 py-16">
       <div className="surface-border surface-card flex flex-col items-start gap-4 p-8">
         <div>
           <p className="text-xs font-medium tracking-widest text-[var(--color-danger)] uppercase">
-            Error
+            {t("error.eyebrow")}
           </p>
-          <h1 className="mt-1 text-xl font-semibold text-[var(--color-ink)]">{title}</h1>
+          <h1 className="mt-1 text-xl font-semibold text-[var(--color-ink)]">{t(titleKey)}</h1>
         </div>
         <p className="text-sm text-[var(--color-ink-muted)] leading-relaxed">
-          {error.message || "No error message was recorded."}
+          {error.message || t("error.noMessage")}
         </p>
         {error.digest && (
           <p className="font-mono text-xs text-[var(--color-ink-muted)]">digest: {error.digest}</p>
@@ -36,9 +41,9 @@ export function ErrorPanel({
         <button
           type="button"
           onClick={reset}
-          className="rounded-[var(--radius-sm)] bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[var(--color-accent-ink)] transition-opacity hover:opacity-90"
+          className="rounded-[var(--radius-sm)] bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[var(--color-accent-ink)] transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
         >
-          Try again
+          {t("error.retry")}
         </button>
       </div>
     </main>

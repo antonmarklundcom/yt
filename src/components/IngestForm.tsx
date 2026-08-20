@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { submitIngest, type IngestFormResult } from "@/lib/ingest.actions";
 import { createNdjsonParser } from "@/lib/ndjson";
+import { translator, type Locale, type Translator } from "@/lib/i18n";
 import { ResultMessage, type ResultTone } from "./ResultMessage";
 import { parseYouTubeUrl } from "@/lib/youtube/url";
 
@@ -19,16 +20,25 @@ type Line =
   | { type: "done"; message: string }
   | { type: "error"; error: string };
 
-function describe(event: WireProgress): string {
+function describe(t: Translator, event: WireProgress): string {
   switch (event.phase) {
     case "resolved":
-      return `Resolved ${event.description}`;
+      return t("ingest.progress.resolved", { description: event.description });
     case "listed":
-      return `Found ${event.count} video(s)`;
+      return t("ingest.progress.listed", { count: event.count });
     case "stored":
-      return `Stored ${event.index + 1}/${event.total} — ${event.title}`;
+      return t("ingest.progress.stored", {
+        index: event.index + 1,
+        total: event.total,
+        title: event.title,
+      });
     case "captions":
-      return `Captions ${event.index + 1}/${event.total} (${event.outcome}) — ${event.title}`;
+      return t("ingest.progress.captions", {
+        index: event.index + 1,
+        total: event.total,
+        outcome: event.outcome,
+        title: event.title,
+      });
   }
 }
 
@@ -40,7 +50,8 @@ function describe(event: WireProgress): string {
  * fetches — minutes of work — so it streams progress from /api/ingest instead
  * of leaving a frozen "Working…" on screen with no way to tell slow from hung.
  */
-export function IngestForm() {
+export function IngestForm({ locale }: { locale: Locale }) {
+  const t = translator(locale);
   const [state, formAction, pending] = useActionState(submitIngest, initialState);
   const [showTranscript, setShowTranscript] = useState(false);
 
@@ -62,7 +73,7 @@ export function IngestForm() {
 
       if (!response.ok || !response.body) {
         const detail = await response.json().catch(() => null);
-        throw new Error(detail?.error ?? `Ingest failed (${response.status}).`);
+        throw new Error(detail?.error ?? `${t("ingest.failed")} (${response.status})`);
       }
 
       const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
@@ -73,7 +84,7 @@ export function IngestForm() {
         if (done) break;
         for (const line of parse(value)) {
           if (line.type === "progress") {
-            setProgress((prev) => [...prev, describe(line.event)]);
+            setProgress((prev) => [...prev, describe(t, line.event)]);
           } else if (line.type === "done") {
             // Bulk ingest analyses nothing, so this is never a "success" — the
             // videos still need analysing from the feed.
@@ -86,7 +97,7 @@ export function IngestForm() {
     } catch (err) {
       setStreamResult({
         tone: "error",
-        text: err instanceof Error ? err.message : "Ingest failed.",
+        text: err instanceof Error ? err.message : t("ingest.failed"),
       });
     } finally {
       setStreaming(false);
@@ -114,36 +125,34 @@ export function IngestForm() {
   return (
     <form action={formAction} onSubmit={onSubmit} className="flex flex-col gap-3">
       <label className="flex flex-col gap-1.5">
-        <span className="text-xs text-[var(--color-ink-muted)]">
-          Video, playlist or channel URL (or @handle)
-        </span>
+        <span className="text-xs text-[var(--color-ink-muted)]">{t("ingest.urlLabel")}</span>
         <input
           type="text"
           name="url"
           required
-          placeholder="https://youtube.com/watch?v=…"
-          className="surface-border rounded-[var(--radius-sm)] bg-[var(--color-surface-raised)] px-3 py-2 text-sm text-[var(--color-ink)] placeholder:text-[var(--color-ink-muted)] focus:outline-none"
+          placeholder={t("ingest.urlPlaceholder")}
+          className="surface-border rounded-[var(--radius-sm)] bg-[var(--color-surface-raised)] px-3 py-2 text-sm text-[var(--color-ink)] placeholder:text-[var(--color-ink-muted)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
         />
       </label>
 
       <button
         type="button"
         onClick={() => setShowTranscript((v) => !v)}
-        className="w-fit text-xs text-[var(--color-accent)] hover:underline"
+        className="w-fit rounded-[var(--radius-sm)] text-xs text-[var(--color-accent)] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
       >
-        {showTranscript ? "Cancel manual transcript" : "No captions? Paste a transcript instead"}
+        {t(showTranscript ? "ingest.hideTranscript" : "ingest.showTranscript")}
       </button>
 
       {showTranscript && (
         <label className="flex flex-col gap-1.5">
           <span className="text-xs text-[var(--color-ink-muted)]">
-            Transcript text (single video URL above required)
+            {t("ingest.transcriptLabel")}
           </span>
           <textarea
             name="transcript"
             rows={8}
-            placeholder="Paste the transcript…"
-            className="surface-border rounded-[var(--radius-sm)] bg-[var(--color-surface-raised)] px-3 py-2 text-sm text-[var(--color-ink)] placeholder:text-[var(--color-ink-muted)] focus:outline-none"
+            placeholder={t("ingest.transcriptPlaceholder")}
+            className="surface-border rounded-[var(--radius-sm)] bg-[var(--color-surface-raised)] px-3 py-2 text-sm text-[var(--color-ink)] placeholder:text-[var(--color-ink-muted)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
           />
         </label>
       )}
@@ -153,7 +162,7 @@ export function IngestForm() {
         disabled={busy}
         className="w-fit rounded-[var(--radius-sm)] bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[var(--color-accent-ink)] transition-opacity hover:opacity-90 disabled:opacity-50"
       >
-        {busy ? "Working…" : "Ingest & analyse"}
+        {busy ? t("ingest.working") : t("ingest.submit")}
       </button>
 
       {progress.length > 0 && (

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslator } from "@/lib/i18n/client";
 
 /**
  * Copy an arbitrary blob to the clipboard. The failed-analysis raw response is
@@ -10,13 +11,14 @@ import { useState } from "react";
  */
 export function CopyTextButton({
   text,
-  label = "Copy",
-  className = "surface-border rounded-[var(--radius-sm)] px-3 py-1.5 text-xs font-medium text-[var(--color-ink)] transition-colors hover:border-[var(--color-accent)]",
+  label,
+  className = "surface-border rounded-[var(--radius-sm)] px-3 py-1.5 text-xs font-medium text-[var(--color-ink)] transition-colors hover:border-[var(--color-accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]",
 }: {
   text: string;
-  label?: string;
+  label: string;
   className?: string;
 }) {
+  const t = useTranslator();
   const [copied, setCopied] = useState(false);
 
   return (
@@ -29,7 +31,7 @@ export function CopyTextButton({
         setTimeout(() => setCopied(false), 1800);
       }}
     >
-      {copied ? "Copied" : label}
+      {copied ? t("video.copied") : label}
     </button>
   );
 }

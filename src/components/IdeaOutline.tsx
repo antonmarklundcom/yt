@@ -2,7 +2,9 @@
 
 import { useState, useTransition } from "react";
 import type { OutlinePayload } from "@/lib/analysis/contract";
+import { useTranslator } from "@/lib/i18n/client";
 import { generateOutlineAction } from "@/lib/outline.actions";
+import { ResultMessage } from "./ResultMessage";
 
 function toPlainText(payload: OutlinePayload): string {
   return [
@@ -25,13 +27,14 @@ export function IdeaOutline({
   videoId: number;
   outline: OutlinePayload | null;
 }) {
+  const t = useTranslator();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   if (!outline) {
     return (
-      <div className="mt-2">
+      <div className="mt-2 flex flex-col items-start gap-2">
         <button
           type="button"
           disabled={pending}
@@ -42,29 +45,29 @@ export function IdeaOutline({
               if (!result.ok) setError(result.error);
             })
           }
-          className="surface-border rounded-[var(--radius-sm)] px-3 py-1.5 text-xs font-medium text-[var(--color-ink)] hover:border-[var(--color-accent)] disabled:opacity-50"
+          className="surface-border rounded-[var(--radius-sm)] px-3 py-1.5 text-xs font-medium text-[var(--color-ink)] hover:border-[var(--color-accent)] disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
         >
-          {pending ? "Generating…" : "Generate outline"}
+          {pending ? t("outline.generating") : t("outline.generate")}
         </button>
-        {error && <p className="mt-2 text-xs text-[var(--color-danger)]">{error}</p>}
+        {error && <ResultMessage tone="error">{error}</ResultMessage>}
       </div>
     );
   }
 
   return (
     <div className="surface-border mt-3 flex flex-col gap-2 rounded-[var(--radius-sm)] bg-[var(--color-surface)] p-3 text-xs">
-      <OutlineField label="Hook" value={outline.hook} />
-      <OutlineField label="Re-hook" value={outline.rehook} />
+      <OutlineField label={t("outline.hook")} value={outline.hook} />
+      <OutlineField label={t("outline.rehook")} value={outline.rehook} />
       <div>
-        <p className="text-[var(--color-ink-muted)]">Teaching points</p>
+        <p className="text-[var(--color-ink-muted)]">{t("outline.teachingPoints")}</p>
         <ul className="mt-0.5 list-disc pl-4 text-[var(--color-ink)]">
-          {outline.teaching_points.map((t, i) => (
-            <li key={i}>{t}</li>
+          {outline.teaching_points.map((point, i) => (
+            <li key={i}>{point}</li>
           ))}
         </ul>
       </div>
-      <OutlineField label="Twist" value={outline.twist} />
-      <OutlineField label="CTA" value={outline.cta} />
+      <OutlineField label={t("outline.twist")} value={outline.twist} />
+      <OutlineField label={t("outline.cta")} value={outline.cta} />
       <button
         type="button"
         onClick={async () => {
@@ -72,9 +75,9 @@ export function IdeaOutline({
           setCopied(true);
           setTimeout(() => setCopied(false), 1800);
         }}
-        className="mt-1 w-fit rounded-[var(--radius-sm)] bg-[var(--color-accent)] px-3 py-1.5 font-medium text-[var(--color-accent-ink)]"
+        className="mt-1 w-fit rounded-[var(--radius-sm)] bg-[var(--color-accent)] px-3 py-1.5 font-medium text-[var(--color-accent-ink)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
       >
-        {copied ? "Copied" : "Copy outline"}
+        {copied ? t("video.copied") : t("outline.copy")}
       </button>
     </div>
   );
