@@ -112,6 +112,9 @@ export const en = {
   "ideas.whyNow": "Why now",
 
   "outline.generate": "Generate outline",
+  "outline.retry": "Retry outline",
+  "outline.failed": "Generation failed — show why",
+  "outline.failedNoMessage": "No error message was recorded.",
   "outline.generating": "Generating…",
   "outline.copy": "Copy outline",
   "outline.hook": "Hook",
@@ -296,6 +299,9 @@ export const sv: Record<TranslationKey, string> = {
   "ideas.whyNow": "Varför nu",
 
   "outline.generate": "Skapa disposition",
+  "outline.retry": "Försök igen",
+  "outline.failed": "Generering misslyckades — visa varför",
+  "outline.failedNoMessage": "Inget felmeddelande sparades.",
   "outline.generating": "Skapar…",
   "outline.copy": "Kopiera disposition",
   "outline.hook": "Hook",
