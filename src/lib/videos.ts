@@ -1,12 +1,24 @@
-import { and, desc, eq, getTableColumns, like, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, isNull, like, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { analyses, videos, type Analysis, type CaptionStatus, type Video } from "@/db/schema";
 
 export const DIGEST_PAGE_SIZE = 24;
 
+/**
+ * Read-state filter (PR-19). "unread" is `read_at is null`; "pinned" is the
+ * flag. They are one control rather than two checkboxes because the useful
+ * question is always "show me one of these", never "show me both at once".
+ */
+export type ReadFilter = "unread" | "pinned";
+
+/** Sort orders offered by the feed. `published` stays the default. */
+export type DigestSort = "published" | "added" | "views";
+
 export type DigestQuery = {
   q?: string;
   status?: CaptionStatus;
+  filter?: ReadFilter;
+  sort?: DigestSort;
   page?: number;
 };
 
@@ -26,9 +38,32 @@ export type DigestPage = {
 };
 
 const STATUS_VALUES: CaptionStatus[] = ["unknown", "available", "none", "failed"];
+const FILTER_VALUES: ReadFilter[] = ["unread", "pinned"];
+const SORT_VALUES: DigestSort[] = ["published", "added", "views"];
 
 export function parseCaptionStatus(value: string | undefined): CaptionStatus | undefined {
   return STATUS_VALUES.find((s) => s === value);
+}
+
+export function parseReadFilter(value: string | undefined): ReadFilter | undefined {
+  return FILTER_VALUES.find((f) => f === value);
+}
+
+export function parseDigestSort(value: string | undefined): DigestSort | undefined {
+  return SORT_VALUES.find((s) => s === value);
+}
+
+function orderFor(sort: DigestSort | undefined) {
+  switch (sort) {
+    case "added":
+      return [desc(videos.createdAt), desc(videos.id)];
+    case "views":
+      // Nulls sort last: a video whose view count was never fetched is not the
+      // most-watched thing in the corpus.
+      return [asc(isNull(videos.viewCount)), desc(videos.viewCount), desc(videos.id)];
+    default:
+      return [desc(videos.publishedAt), desc(videos.id)];
+  }
 }
 
 /**
@@ -40,6 +75,8 @@ export async function listDigestVideos(query: DigestQuery): Promise<DigestPage> 
   const conditions = [
     query.q ? like(videos.title, `%${query.q}%`) : undefined,
     query.status ? eq(videos.captionStatus, query.status) : undefined,
+    query.filter === "unread" ? isNull(videos.readAt) : undefined,
+    query.filter === "pinned" ? eq(videos.pinned, true) : undefined,
   ].filter((c): c is NonNullable<typeof c> => c !== undefined);
   const where = conditions.length > 0 ? and(...conditions) : undefined;
 
@@ -63,9 +100,29 @@ export async function listDigestVideos(query: DigestQuery): Promise<DigestPage> 
     })
     .from(videos)
     .where(where)
-    .orderBy(desc(videos.publishedAt), desc(videos.id))
+    // The id tiebreaker is not cosmetic: published_at and view_count are both
+    // nullable and both repeat, and without a unique last key MySQL is free to
+    // order ties differently per page, which drops or duplicates rows across
+    // LIMIT/OFFSET boundaries.
+    .orderBy(...orderFor(query.sort))
     .limit(DIGEST_PAGE_SIZE)
     .offset((clampedPage - 1) * DIGEST_PAGE_SIZE);
 
   return { videos: rows, total, page: clampedPage, totalPages };
+}
+
+/**
+ * First-open marks a video read.
+ *
+ * `read_at is null` in the WHERE is what makes it "first read" rather than
+ * "last opened" — re-reading an analysis is free and expected, and a timestamp
+ * that moved every time would make the unread filter the only thing the column
+ * could answer. Deliberately not a server action: this runs during the video
+ * page's render, and revalidatePath() is illegal there.
+ */
+export async function markVideoRead(videoId: number, at: Date = new Date()): Promise<void> {
+  await db
+    .update(videos)
+    .set({ readAt: at })
+    .where(and(eq(videos.id, videoId), isNull(videos.readAt)));
 }

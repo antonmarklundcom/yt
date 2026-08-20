@@ -110,6 +110,20 @@ export const videos = mysqlTable(
       .notNull()
       .default("unknown"),
     captionCheckedAt: timestamp("caption_checked_at"),
+
+    /**
+     * [PR-19] Read tracking. Columns rather than a join table because v1 is
+     * single-user (PLAN.md §0) — a `video_reads` table would carry a user_id
+     * that is always the same value, and every feed query would pay for a join
+     * to learn it. Multi-user (§8) turns these into that table; until then this
+     * is the honest shape.
+     *
+     * read_at is null for unread, and is set once — on first open — so it means
+     * "when this was first read", not "when it was last touched".
+     */
+    readAt: timestamp("read_at"),
+    pinned: boolean("pinned").notNull().default(false),
+
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => [
@@ -118,6 +132,10 @@ export const videos = mysqlTable(
     // The feed orders by published_at desc; the backfill scans by caption_status.
     index("videos_published_idx").on(t.publishedAt),
     index("videos_caption_status_idx").on(t.captionStatus),
+    // The feed's unread and pinned filters, and the "added" sort order.
+    index("videos_read_at_idx").on(t.readAt),
+    index("videos_pinned_idx").on(t.pinned),
+    index("videos_created_idx").on(t.createdAt),
   ],
 );
 

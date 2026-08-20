@@ -2,11 +2,22 @@ import type { Metadata } from "next";
 import { DigestFilters } from "@/components/DigestFilters";
 import { Pagination } from "@/components/Pagination";
 import { VideoCard } from "@/components/VideoCard";
-import { listDigestVideos, parseCaptionStatus } from "@/lib/videos";
+import {
+  listDigestVideos,
+  parseCaptionStatus,
+  parseDigestSort,
+  parseReadFilter,
+} from "@/lib/videos";
 
 export const metadata: Metadata = { title: "Digest" };
 
-type SearchParams = { q?: string; status?: string; page?: string };
+type SearchParams = {
+  q?: string;
+  status?: string;
+  filter?: string;
+  sort?: string;
+  page?: string;
+};
 
 export default async function Home({
   searchParams,
@@ -16,10 +27,12 @@ export default async function Home({
   const params = await searchParams;
   const q = params.q?.trim() ?? "";
   const status = parseCaptionStatus(params.status);
+  const filter = parseReadFilter(params.filter);
+  const sort = parseDigestSort(params.sort);
   const page = Number(params.page) || 1;
 
-  const result = await listDigestVideos({ q: q || undefined, status, page });
-  const hasFilters = q !== "" || status !== undefined;
+  const result = await listDigestVideos({ q: q || undefined, status, filter, sort, page });
+  const hasFilters = q !== "" || status !== undefined || filter !== undefined;
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-10">
@@ -32,7 +45,12 @@ export default async function Home({
             {result.total} video{result.total === 1 ? "" : "s"}
           </h1>
         </div>
-        <DigestFilters q={q} status={status ?? ""} />
+        <DigestFilters
+          q={q}
+          status={status ?? ""}
+          filter={filter ?? ""}
+          sort={sort ?? "published"}
+        />
       </div>
 
       {result.videos.length === 0 ? (
@@ -42,7 +60,7 @@ export default async function Home({
           </h2>
           <p className="max-w-md text-sm text-[var(--color-ink-muted)] leading-relaxed">
             {hasFilters
-              ? "Try a different search term or status."
+              ? "Try a different search term, status, or read filter."
               : "Add a channel, playlist or single video from Ingest and its analysis will appear here."}
           </p>
         </div>
