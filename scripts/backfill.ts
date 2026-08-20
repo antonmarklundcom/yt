@@ -12,7 +12,12 @@
  */
 
 import { closeDb } from "../src/db";
-import { awaitBatch, collectBatchResults, submitAnalysisBatch } from "../src/lib/analysis/batch";
+import {
+  awaitBatch,
+  collectBatchResults,
+  submitAnalysisBatch,
+  type BatchOutcome,
+} from "../src/lib/analysis/batch";
 import { analyzeVideo, findPendingVideos } from "../src/lib/analysis/run";
 import type { AnalysisModel } from "../src/lib/analysis/pricing";
 import {
@@ -139,14 +144,12 @@ async function collect(batchId: string, model?: AnalysisModel): Promise<void> {
   await report(await collectBatchResults(batchId, model ? { model } : {}));
 }
 
-async function report(outcome: {
-  succeeded: number;
-  failed: number;
-  expired: number;
-  actualUsd: number;
-}): Promise<void> {
+async function report(outcome: BatchOutcome): Promise<void> {
   console.log(
-    `\n${outcome.succeeded} ok · ${outcome.failed} failed · ${outcome.expired} expired`,
+    `\n${outcome.succeeded} ok · ${outcome.failed} failed · ${outcome.expired} expired` +
+      // Only worth a word when it happened: a non-zero count means this batch
+      // was collected before and the earlier rows were left alone (PR-32).
+      (outcome.alreadyWritten > 0 ? ` · ${outcome.alreadyWritten} already written` : ""),
   );
   console.log(`Actual cost: ${formatUsd(outcome.actualUsd)}`);
   const status = await spendStatus();
