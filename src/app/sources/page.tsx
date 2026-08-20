@@ -1,7 +1,10 @@
+import type { Metadata } from "next";
 import { AddSourceForm } from "@/components/AddSourceForm";
 import { removeSource, setSourceActive } from "@/lib/sources.actions";
 import { listSources } from "@/lib/sources";
 import { formatDate } from "@/lib/format";
+
+export const metadata: Metadata = { title: "Sources" };
 
 export default async function SourcesPage() {
   const rows = await listSources();

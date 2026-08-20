@@ -1,4 +1,5 @@
 import { and, eq } from "drizzle-orm";
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { db } from "@/db";
 import { outlines, transcripts, videos } from "@/db/schema";
@@ -10,6 +11,27 @@ import { CaptionBadge } from "@/components/CaptionBadge";
 import { CopyAnalysisButton } from "@/components/CopyAnalysisButton";
 import { IdeaOutline } from "@/components/IdeaOutline";
 import { formatDate, formatDuration } from "@/lib/format";
+
+/**
+ * Selects the title alone rather than reusing the page's query — this runs
+ * before the page renders and the whole row is not needed to name a tab.
+ */
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  const videoId = Number(id);
+  if (!Number.isInteger(videoId)) return { title: "Video" };
+
+  const [row] = await db
+    .select({ title: videos.title })
+    .from(videos)
+    .where(eq(videos.id, videoId))
+    .limit(1);
+  return { title: row?.title ?? "Video" };
+}
 
 export default async function VideoPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
