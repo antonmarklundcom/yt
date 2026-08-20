@@ -2,13 +2,13 @@ import { and, eq } from "drizzle-orm";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { db } from "@/db";
-import { outlines, transcripts, videos } from "@/db/schema";
+import { outlines, transcripts, videoReads, videos } from "@/db/schema";
 import { latestAnalysisForVideo } from "@/lib/analysis/latest";
 import { DEFAULT_MODEL } from "@/lib/analysis/pricing";
 import { estimateAnalysisCostUsd, formatUsd } from "@/lib/spend";
 import { markVideoRead } from "@/lib/videos";
 import { isOwner } from "@/lib/auth/roles";
-import { getSession } from "@/lib/auth/session";
+import { requireUser } from "@/lib/auth/session";
 import { getLocale } from "@/lib/i18n/server";
 import { translator, type Locale, type TranslationKey } from "@/lib/i18n";
 import { AnalyzeButton } from "@/components/AnalyzeButton";
@@ -49,16 +49,29 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
   const t = translator(locale);
   // Owner-only controls are hidden rather than shown-and-refused. The server
   // actions check for themselves regardless (src/lib/auth/roles.ts).
-  const canSpend = isOwner(await getSession());
+  // requireUser() rather than getSession(): read state is per-user (PR-25), so
+  // the page needs an id, not just a role. The middleware has already redirected
+  // signed-out visitors; this is the same gate, one layer in.
+  const user = await requireUser();
+  const canSpend = isOwner(user);
 
   const rows = await db.select().from(videos).where(eq(videos.id, videoId)).limit(1);
   const video = rows[0];
   if (!video) notFound();
 
-  // Opening the page is what "read" means here (PR-19). Fire-and-forget would
-  // race the render's own read of the row, so it is awaited before anything
-  // renders — one indexed UPDATE that no-ops after the first visit.
-  await markVideoRead(video.id);
+  // Opening the page is what "read" means here (PR-19), for this user alone
+  // since PR-25. Fire-and-forget would race the read of the state below, so it
+  // is awaited — one primary-key upsert whose timestamp stops moving after the
+  // first visit.
+  await markVideoRead(video.id, user.id);
+
+  // Read after the mark, so the controls show the state the visit just created.
+  const [readState] = await db
+    .select({ pinned: videoReads.pinned })
+    .from(videoReads)
+    .where(and(eq(videoReads.videoId, video.id), eq(videoReads.userId, user.id)))
+    .limit(1);
+  const pinned = readState?.pinned ?? false;
 
   const analysis = await latestAnalysisForVideo(video.id);
 
@@ -110,7 +123,7 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
           </a>
           <VideoReadControls
             videoId={video.id}
-            pinned={video.pinned}
+            pinned={pinned}
             locale={locale}
             canDelete={canSpend}
           />

@@ -1,7 +1,7 @@
 # Handoff — Batch C (round 2), and the corrected go-live sheet
 
-**All of round 2's code is merged.** PR-15 → PR-24, every row in PLAN.md §9
-except A0 — which is not a coding task and has still not been done.
+**All of round 2's code is merged**, plus PR-25. PR-15 → PR-25, every row in
+PLAN.md §9 except A0 — which is not a coding task and has still not been done.
 
 `main` is green: `npm run typecheck`, `npm test` (67 pass), `npx eslint .`,
 `npm run build`.
@@ -10,6 +10,7 @@ except A0 — which is not a coding task and has still not been done.
 |---|---|---|
 | **23** | Session auth: login, signed cookie, middleware gate | Merged (#29) |
 | **24** | Role gate: owner/employee, spend boundary | Merged (#30) |
+| **25** | Per-user read state: `video_reads` table, migration 0006 | Merged |
 
 ---
 
@@ -45,9 +46,10 @@ true. For Batch C specifically it means:
 `.env.example` documents both. Remember Hostinger needs a **redeploy**, not a
 restart, for env changes to take effect.
 
-## 3. Migrations pending — five, not two
+## 3. Migrations pending — six, not two
 
-A0 in `docs/HANDOFF-BATCH-A.md` said two. Round 2 added three more:
+A0 in `docs/HANDOFF-BATCH-A.md` said two. Round 2 added three more, and PR-25 a
+sixth:
 
 | File | Effect | Risk |
 |---|---|---|
@@ -56,6 +58,7 @@ A0 in `docs/HANDOFF-BATCH-A.md` said two. Round 2 added three more:
 | `0003` | `videos.read_at`, `videos.pinned`, 3 indexes | none, additive |
 | `0004` | `users.password_hash` (nullable) | none, additive |
 | `0005` | role enum `admin`/`user` → `owner`/`employee` | **rewrites data** |
+| `0006` | `video_reads` table; backfill; drops `videos.read_at`/`pinned` | **moves data** |
 
 **0005 is the only one that touches existing rows.** It widens the enum to all
 four values, remaps `admin`→`owner` and `user`→`employee`, then narrows it. It
@@ -65,8 +68,15 @@ does not contain — it fails in strict mode and blanks every role otherwise.
 On a database that has never been seeded there is nothing to remap and it is a
 no-op with extra steps.
 
-`npm run db:check` should still report **10 tables** — 0003/0004/0005 add
-columns, not tables.
+**0006 is hand-edited for the same class of reason.** drizzle-kit emitted the
+`CREATE TABLE` and the two `DROP COLUMN`s with nothing in between — a correct
+schema diff and a wrong migration, since it discards every existing read and pin.
+The `INSERT … SELECT` in the middle copies them to the owner(s) first, and it has
+to stay before the drops. **0006 must run after 0005**, because the backfill
+selects `users.role = 'owner'` — a value 0005 is what creates.
+
+`npm run db:check` should report **11 tables** — 0006 adds `video_reads`;
+0003/0004/0005 add columns, not tables.
 
 ## 4. The corrected A0 sequence
 
@@ -94,7 +104,7 @@ export ADMIN_EMAIL='you@example.com'
 export ADMIN_PASSWORD='<at least 12 characters>'   # NEW — this is your login
 npm run db:migrate     # applies all five
 npm run db:seed        # creates/updates the owner and sets the password
-npm run db:check       # expect 10 tables
+npm run db:check       # expect 11 tables
 ```
 
 `drizzle-kit` auto-loads `.env`; **`tsx` does not** — export the vars in the
@@ -132,10 +142,10 @@ in §1.4 says prompt caching does not engage, so budget ~$12/month, not $6.
 - **No session revocation before expiry (30 days).** Rotating the secret is the
   only revocation, and it signs out everyone. Fine for one user; worth
   revisiting if a second person ever gets an account.
-- **Read state is shared across users** (`read_at`/`pinned` are columns on
-  `videos`). With one user this is invisible; the moment an employee account
-  exists, their reading marks yours. The fix is a `video_reads` table, and the
-  decision belongs to whoever creates that second account.
+- ~~Read state is shared across users.~~ **Fixed by PR-25** — `read_at`/`pinned`
+  are rows in `video_reads` keyed `(video_id, user_id)`, so an employee's reading
+  no longer marks yours. Migration 0006 carries the existing state over to the
+  owner. Like everything else here, it has never run against a real database.
 - **`deleteVideo` is not transactional** (see `docs/HANDOFF-BATCH-B.md` §6).
 
 ## 6. What is left, honestly
@@ -148,6 +158,9 @@ only the owner has. Beyond that the plan's own remainders are:
 - **§11 Gemini Flash fallback** for captionless videos — deliberately deferred
   until the gate result is known, and gated behind an `AnalysisProvider`
   abstraction that does not exist yet.
+- **Nothing revokes a session** (see the risk above), and there is still no
+  user-management UI: a second account is an INSERT by hand plus a password hash.
+  PR-25 makes that account safe to create; it does not make it easy.
 - The round-3 candidates in `docs/HANDOFF-BATCH-A.md` §6 and
   `docs/HANDOFF-BATCH-B.md` §7. The two I would pick first: the spend cap does
   not count submitted-but-uncollected batches (a real correctness gap, and

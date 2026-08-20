@@ -74,7 +74,7 @@ export DATABASE_URL='mysql://user:pass@srv####.hstgr.io:3306/dbname'
 export ADMIN_EMAIL='you@example.com'
 npm run db:migrate
 npm run db:seed
-npm run db:check          # expect 10 tables
+npm run db:check          # expect 11 tables
 ```
 
 Two migrations are pending and both are safe — `0001` creates `batches`,

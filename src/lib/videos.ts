@@ -1,6 +1,13 @@
 import { and, asc, desc, eq, getTableColumns, isNull, like, or, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { analyses, videos, type Analysis, type CaptionStatus, type Video } from "@/db/schema";
+import {
+  analyses,
+  videoReads,
+  videos,
+  type Analysis,
+  type CaptionStatus,
+  type Video,
+} from "@/db/schema";
 
 export const DIGEST_PAGE_SIZE = 24;
 
@@ -15,6 +22,11 @@ export type ReadFilter = "unread" | "pinned";
 export type DigestSort = "published" | "added" | "views";
 
 export type DigestQuery = {
+  /**
+   * Whose read state to show (PR-25). Required rather than optional: read state
+   * is per-user now, and a default would quietly show one user another's.
+   */
+  userId: number;
   q?: string;
   status?: CaptionStatus;
   filter?: ReadFilter;
@@ -28,7 +40,12 @@ export type DigestQuery = {
  * a join emits one row per attempt and would need de-duplicating in code, and
  * would break the SQL-side pagination the feed depends on.
  */
-export type DigestVideo = Video & { analysisStatus: Analysis["status"] | null };
+export type DigestVideo = Video & {
+  analysisStatus: Analysis["status"] | null;
+  /** This user's read state, from the LEFT JOIN — null when never opened. */
+  readAt: Date | null;
+  pinned: boolean;
+};
 
 export type DigestPage = {
   videos: DigestVideo[];
@@ -102,17 +119,24 @@ function orderFor(sort: DigestSort | undefined) {
  */
 export async function listDigestVideos(query: DigestQuery): Promise<DigestPage> {
   const page = Math.max(1, query.page ?? 1);
+  // The join condition carries the user id, not the WHERE clause: in the WHERE
+  // it would turn the LEFT JOIN back into an inner one and hide every video the
+  // user has never opened — which is most of them, and all of the unread ones.
+  const readsJoin = and(eq(videoReads.videoId, videos.id), eq(videoReads.userId, query.userId));
   const conditions = [
     query.q ? matchesQuery(query.q) : undefined,
     query.status ? eq(videos.captionStatus, query.status) : undefined,
-    query.filter === "unread" ? isNull(videos.readAt) : undefined,
-    query.filter === "pinned" ? eq(videos.pinned, true) : undefined,
+    // "unread" covers both shapes of unread: no row at all, and a row that
+    // exists only because the video is pinned.
+    query.filter === "unread" ? isNull(videoReads.readAt) : undefined,
+    query.filter === "pinned" ? eq(videoReads.pinned, true) : undefined,
   ].filter((c): c is NonNullable<typeof c> => c !== undefined);
   const where = conditions.length > 0 ? and(...conditions) : undefined;
 
   const countRows = await db
     .select({ total: sql<number>`count(*)` })
     .from(videos)
+    .leftJoin(videoReads, readsJoin)
     .where(where);
   const total = countRows[0]?.total ?? 0;
 
@@ -127,8 +151,11 @@ export async function listDigestVideos(query: DigestQuery): Promise<DigestPage> 
         where a.video_id = ${videos.id}
         order by a.id desc limit 1
       )`,
+      readAt: videoReads.readAt,
+      pinned: videoReads.pinned,
     })
     .from(videos)
+    .leftJoin(videoReads, readsJoin)
     .where(where)
     // The id tiebreaker is not cosmetic: published_at and view_count are both
     // nullable and both repeat, and without a unique last key MySQL is free to
@@ -138,21 +165,37 @@ export async function listDigestVideos(query: DigestQuery): Promise<DigestPage> 
     .limit(DIGEST_PAGE_SIZE)
     .offset((clampedPage - 1) * DIGEST_PAGE_SIZE);
 
-  return { videos: rows, total, page: clampedPage, totalPages };
+  return {
+    // The LEFT JOIN yields null for a video this user has never touched, in
+    // both columns. read_at keeps that null — it *is* "unread". `pinned` does
+    // not: it is rendered as a flag, and a null there reaches JSX as a value
+    // React would print rather than skip.
+    videos: rows.map((row) => ({ ...row, pinned: row.pinned ?? false })),
+    total,
+    page: clampedPage,
+    totalPages,
+  };
 }
 
 /**
- * First-open marks a video read.
+ * First-open marks a video read, for this user only (PR-25).
  *
- * `read_at is null` in the WHERE is what makes it "first read" rather than
+ * An upsert rather than an UPDATE, because the row may not exist yet. The
+ * `coalesce` in the update branch is what makes it "first read" rather than
  * "last opened" — re-reading an analysis is free and expected, and a timestamp
- * that moved every time would make the unread filter the only thing the column
- * could answer. Deliberately not a server action: this runs during the video
- * page's render, and revalidatePath() is illegal there.
+ * that moved every time would make the unread filter the only question the
+ * column could answer. Deliberately not a server action: this runs during the
+ * video page's render, and revalidatePath() is illegal there.
  */
-export async function markVideoRead(videoId: number, at: Date = new Date()): Promise<void> {
+export async function markVideoRead(
+  videoId: number,
+  userId: number,
+  at: Date = new Date(),
+): Promise<void> {
   await db
-    .update(videos)
-    .set({ readAt: at })
-    .where(and(eq(videos.id, videoId), isNull(videos.readAt)));
+    .insert(videoReads)
+    .values({ videoId, userId, readAt: at })
+    .onDuplicateKeyUpdate({
+      set: { readAt: sql`coalesce(${videoReads.readAt}, ${at})` },
+    });
 }

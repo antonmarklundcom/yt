@@ -2,26 +2,38 @@
 
 /** Per-video mutations from the UI: read state, pinning, and deletion. */
 
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
-import { analyses, outlines, transcripts, videos } from "@/db/schema";
-import { requireOwner } from "@/lib/auth/session";
+import { analyses, outlines, transcripts, videoReads, videos } from "@/db/schema";
+import { requireOwner, requireUser } from "@/lib/auth/session";
 
 /**
  * Pinning is the counterweight to an unbounded feed: the corpus only grows, and
  * without it the videos worth returning to sink below the fold within a week.
  */
 export async function setVideoPinned(videoId: number, pinned: boolean): Promise<void> {
-  await db.update(videos).set({ pinned }).where(eq(videos.id, videoId));
+  // Per-user since PR-25: pinning is one reader's shortlist, not a property of
+  // the video. The upsert is needed because pinning can precede reading.
+  const user = await requireUser();
+  await db
+    .insert(videoReads)
+    .values({ videoId, userId: user.id, pinned })
+    .onDuplicateKeyUpdate({ set: { pinned } });
   revalidatePath("/");
   revalidatePath(`/video/${videoId}`);
 }
 
 /** Explicit unread, so a video opened by accident can be put back in the queue. */
 export async function setVideoUnread(videoId: number): Promise<void> {
-  await db.update(videos).set({ readAt: null }).where(eq(videos.id, videoId));
+  const user = await requireUser();
+  // An UPDATE, not an upsert: with no row the video is already unread, and
+  // inserting one would only record that fact more expensively.
+  await db
+    .update(videoReads)
+    .set({ readAt: null })
+    .where(and(eq(videoReads.videoId, videoId), eq(videoReads.userId, user.id)));
   revalidatePath("/");
   revalidatePath(`/video/${videoId}`);
 }
@@ -50,6 +62,7 @@ export async function deleteVideo(videoId: number): Promise<void> {
   }
   await db.delete(analyses).where(eq(analyses.videoId, videoId));
   await db.delete(transcripts).where(eq(transcripts.videoId, videoId));
+  await db.delete(videoReads).where(eq(videoReads.videoId, videoId));
   await db.delete(videos).where(eq(videos.id, videoId));
 
   revalidatePath("/");

@@ -130,19 +130,6 @@ export const videos = mysqlTable(
       .default("unknown"),
     captionCheckedAt: timestamp("caption_checked_at"),
 
-    /**
-     * [PR-19] Read tracking. Columns rather than a join table because v1 is
-     * single-user (PLAN.md §0) — a `video_reads` table would carry a user_id
-     * that is always the same value, and every feed query would pay for a join
-     * to learn it. Multi-user (§8) turns these into that table; until then this
-     * is the honest shape.
-     *
-     * read_at is null for unread, and is set once — on first open — so it means
-     * "when this was first read", not "when it was last touched".
-     */
-    readAt: timestamp("read_at"),
-    pinned: boolean("pinned").notNull().default(false),
-
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => [
@@ -151,9 +138,7 @@ export const videos = mysqlTable(
     // The feed orders by published_at desc; the backfill scans by caption_status.
     index("videos_published_idx").on(t.publishedAt),
     index("videos_caption_status_idx").on(t.captionStatus),
-    // The feed's unread and pinned filters, and the "added" sort order.
-    index("videos_read_at_idx").on(t.readAt),
-    index("videos_pinned_idx").on(t.pinned),
+    // The "added" sort order. Read state lives in video_reads (PR-25).
     index("videos_created_idx").on(t.createdAt),
   ],
 );
@@ -372,6 +357,44 @@ export const videoTopics = mysqlTable(
 );
 
 // ---------------------------------------------------------------------------
+// video_reads
+// ---------------------------------------------------------------------------
+
+/**
+ * [PR-25] Read state, per user.
+ *
+ * PR-19 put `read_at` and `pinned` on `videos` because v1 was single-user. PR-23
+ * and PR-24 ended that: the moment a second account exists, an employee opening
+ * a video marks it read for the owner too, and un-pins what the owner pinned.
+ * The columns move here before that second account is created rather than after,
+ * because the migration is free while the table holds one user's rows.
+ *
+ * A row exists only once a user has read or pinned the video — absence means
+ * "unread and unpinned", so the feed's unread filter is `read_at is null` over a
+ * LEFT JOIN and costs nothing for videos nobody has touched.
+ *
+ * read_at is set once, on first open, so it means "when this user first read
+ * this", not "when they last opened it".
+ */
+export const videoReads = mysqlTable(
+  "video_reads",
+  {
+    videoId: int("video_id").notNull(),
+    userId: int("user_id").notNull(),
+    readAt: timestamp("read_at"),
+    pinned: boolean("pinned").notNull().default(false),
+  },
+  (t) => [
+    // (video_id, user_id) rather than (user_id, video_id): the feed joins
+    // video → read state, so video_id has to lead for the join to use the PK.
+    primaryKey({ columns: [t.videoId, t.userId] }),
+    // The filters read one user's rows: "my unread", "my pinned".
+    index("video_reads_user_read_idx").on(t.userId, t.readAt),
+    index("video_reads_user_pinned_idx").on(t.userId, t.pinned),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // spend_log
 // ---------------------------------------------------------------------------
 
@@ -415,6 +438,12 @@ export const videosRelations = relations(videos, ({ one, many }) => ({
   transcript: one(transcripts, { fields: [videos.id], references: [transcripts.videoId] }),
   analyses: many(analyses),
   videoTopics: many(videoTopics),
+  reads: many(videoReads),
+}));
+
+export const videoReadsRelations = relations(videoReads, ({ one }) => ({
+  video: one(videos, { fields: [videoReads.videoId], references: [videos.id] }),
+  user: one(users, { fields: [videoReads.userId], references: [users.id] }),
 }));
 
 export const transcriptsRelations = relations(transcripts, ({ one }) => ({
@@ -449,6 +478,8 @@ export type Source = typeof sources.$inferSelect;
 export type NewSource = typeof sources.$inferInsert;
 export type Video = typeof videos.$inferSelect;
 export type NewVideo = typeof videos.$inferInsert;
+export type VideoRead = typeof videoReads.$inferSelect;
+export type NewVideoRead = typeof videoReads.$inferInsert;
 export type Transcript = typeof transcripts.$inferSelect;
 export type NewTranscript = typeof transcripts.$inferInsert;
 export type Analysis = typeof analyses.$inferSelect;

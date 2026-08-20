@@ -1,7 +1,7 @@
 # YouTube Intelligence Workspace — Build Plan
 
-**Status:** round 1 (PR-01 → PR-14) and all of round 2 (PR-15 → PR-24) merged, never
-deployed. **A0 — the caption gate, five migrations and the deploy — is the only thing
+**Status:** round 1 (PR-01 → PR-14), all of round 2 (PR-15 → PR-24), and PR-25
+merged, never deployed. **A0 — the caption gate, five migrations and the deploy — is the only thing
 left, and it needs credentials rather than code.** See `docs/HANDOFF-BATCH-C.md` §4.
 **Stack:** Next.js 15 (App Router) + TypeScript + Tailwind + Drizzle ORM + MySQL (Hostinger) + tsx
 **Deploy:** Hostinger Node.js slot, GitHub integration
@@ -273,6 +273,7 @@ merge. One PR per row. Sequential *within* a batch (later rows touch the same fi
 |---|---|
 | **23** | Session auth: `/login` (email + password, bcrypt hash column added to `users`), httpOnly cookie session, `getSession()` / `requireUser()` helpers, logout, seed script sets the owner password. Replaces nothing — Hostinger basic auth can stay on top or be dropped once this is verified live. |
 | **24** | Role gate: extend enum to `('owner','employee')` (migration from `admin`→`owner`, `user`→`employee`); `requireRole('owner')` at the top of every money-spending action (`submitIngest` analyse paths, `generateOutlineAction`) and destructive action (`removeSource`, delete video); employee keeps add/pause sources, metadata ingest, and all reads; hide owner-only buttons per role in the UI. **The permission boundary is spend, not CRUD.** |
+| **25** | Per-user read state: `read_at`/`pinned` move off `videos` into a `video_reads` table keyed `(video_id, user_id)` (migration 0006 backfills the existing rows to the owner before dropping the columns). PR-19 put them on `videos` because v1 was single-user; PR-24 created the second role, at which point an employee's reading marks the owner's. Built before the second account exists, not after. |
 
 ## 10. Rules for round-2 autonomous PRs
 
