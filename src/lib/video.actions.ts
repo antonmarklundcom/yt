@@ -39,32 +39,44 @@ export async function setVideoUnread(videoId: number): Promise<void> {
 }
 
 /**
- * Delete a video and everything derived from it.
+ * Delete a video and everything derived from it, in one transaction (PR-31).
  *
- * Ordered children-first so a failure halfway leaves orphans that the next
- * attempt still finds by video_id, rather than a video row whose transcript and
- * analyses are unreachable. Outlines hang off analyses, not off the video, so
- * their ids have to be collected before the analyses rows go.
+ * Five statements ran in sequence before, which MySQL was free to leave
+ * half-done if the connection dropped: the ordering meant a retry could still
+ * find the orphans by video_id, but nothing reported the partial state and
+ * nothing guaranteed a retry ever happened. InnoDB gives all-or-nothing for
+ * free here, and this is the only delete in the app that spans more than one
+ * table (removeSource is a single statement).
+ *
+ * Still ordered children-first inside the transaction. Outlines hang off
+ * analyses rather than off the video, so their ids are collected before the
+ * analyses rows go — the ordering is what makes the statements expressible at
+ * all, the transaction is what makes them atomic.
  */
 export async function deleteVideo(videoId: number): Promise<void> {
   // Reading, pinning and marking unread are free and stay open to an employee.
   // Deleting destroys analyses the owner paid for, so it does not.
   await requireOwner("delete a video");
 
-  const analysisRows = await db
-    .select({ id: analyses.id })
-    .from(analyses)
-    .where(eq(analyses.videoId, videoId));
-  const analysisIds = analysisRows.map((row) => row.id);
+  await db.transaction(async (tx) => {
+    const analysisRows = await tx
+      .select({ id: analyses.id })
+      .from(analyses)
+      .where(eq(analyses.videoId, videoId));
+    const analysisIds = analysisRows.map((row) => row.id);
 
-  if (analysisIds.length > 0) {
-    await db.delete(outlines).where(inArray(outlines.analysisId, analysisIds));
-  }
-  await db.delete(analyses).where(eq(analyses.videoId, videoId));
-  await db.delete(transcripts).where(eq(transcripts.videoId, videoId));
-  await db.delete(videoReads).where(eq(videoReads.videoId, videoId));
-  await db.delete(videos).where(eq(videos.id, videoId));
+    if (analysisIds.length > 0) {
+      await tx.delete(outlines).where(inArray(outlines.analysisId, analysisIds));
+    }
+    await tx.delete(analyses).where(eq(analyses.videoId, videoId));
+    await tx.delete(transcripts).where(eq(transcripts.videoId, videoId));
+    await tx.delete(videoReads).where(eq(videoReads.videoId, videoId));
+    await tx.delete(videos).where(eq(videos.id, videoId));
+  });
 
   revalidatePath("/");
+  // Outside the transaction on purpose: redirect() throws a control-flow error
+  // that Next catches, and throwing it inside the callback would roll back a
+  // delete that had already succeeded.
   redirect("/");
 }
