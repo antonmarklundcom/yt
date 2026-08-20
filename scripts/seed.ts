@@ -3,6 +3,7 @@
  *
  *   export DATABASE_URL='mysql://user:pass@host:3306/dbname'
  *   export ADMIN_EMAIL='you@example.com'
+ *   export ADMIN_PASSWORD='...'          # optional; sets/updates the login password
  *   npx tsx scripts/seed.ts
  *
  * tsx does not auto-load .env, so export the vars explicitly.
@@ -11,6 +12,7 @@
 import { sql } from "drizzle-orm";
 import { closeDb, db } from "../src/db";
 import { users } from "../src/db/schema";
+import { hashPassword } from "../src/lib/auth/password";
 
 async function main(): Promise<void> {
   const email = process.env.ADMIN_EMAIL;
@@ -21,19 +23,38 @@ async function main(): Promise<void> {
     );
   }
 
+  // ADMIN_PASSWORD is optional so an existing seeded database is not forced to
+  // change its password on every re-run. Omitting it leaves the stored hash
+  // exactly as it was; a user with no hash simply cannot log in (PR-23).
+  const password = process.env.ADMIN_PASSWORD;
+  if (password !== undefined && password.length < 12) {
+    throw new Error(
+      "ADMIN_PASSWORD must be at least 12 characters. It is the only credential " +
+        "protecting a tool that can spend money.",
+    );
+  }
+  const passwordHash = password ? await hashPassword(password) : undefined;
+
   // Upsert on the unique email rather than insert-then-catch, so re-running
   // after changing the role actually applies the change.
   await db
     .insert(users)
-    .values({ email, role: "admin" })
-    .onDuplicateKeyUpdate({ set: { role: "admin" } });
+    .values({ email, role: "admin", passwordHash })
+    .onDuplicateKeyUpdate({
+      set: passwordHash ? { role: "admin", passwordHash } : { role: "admin" },
+    });
 
   const [rows] = await db.execute(
     sql`select id, email, role, created_at from users order by id`,
   );
   const list = Array.isArray(rows) ? (rows as Array<Record<string, unknown>>) : [];
 
-  console.log(`Seeded. ${list.length} user row(s):`);
+  console.log(
+    passwordHash
+      ? "Seeded, password set."
+      : "Seeded. No ADMIN_PASSWORD given, so no password was changed.",
+  );
+  console.log(`${list.length} user row(s):`);
   for (const u of list) {
     console.log(`  #${String(u["id"])}  ${String(u["email"])}  ${String(u["role"])}`);
   }

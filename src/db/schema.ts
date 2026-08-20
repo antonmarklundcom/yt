@@ -51,6 +51,15 @@ export const users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
   email: varchar("email", { length: 255 }).notNull().unique(),
   role: mysqlEnum("role", ["admin", "user"]).notNull().default("user"),
+  /**
+   * [PR-23] bcrypt hash, null until a password is set.
+   *
+   * Nullable rather than required because the seed has always created the row
+   * from ADMIN_EMAIL alone, and a NOT NULL column would have made this
+   * migration destructive on an existing database. A null hash simply cannot
+   * log in — verification never compares against it.
+   */
+  passwordHash: varchar("password_hash", { length: 255 }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
