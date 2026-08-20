@@ -87,7 +87,11 @@ function summarize(result: PollResult): { summary: string } {
   if (failed > 0) parts.push(`${failed} source error(s)`);
   if (result.quotaExhausted) parts.push("youtube quota exhausted");
   for (const c of result.collected) {
-    parts.push(`collected ${c.batchId} (${c.outcome.succeeded} ok, ${c.outcome.failed} failed)`);
+    parts.push(
+      `collected ${c.batchId} (${c.outcome.succeeded} ok, ${c.outcome.failed} failed` +
+        (c.outcome.alreadyWritten > 0 ? `, ${c.outcome.alreadyWritten} already written` : "") +
+        ")",
+    );
   }
   for (const a of result.abandoned) {
     parts.push(`abandoned ${a.batchId} (unreadable, billed ${a.estimatedUsd.toFixed(4)})`);

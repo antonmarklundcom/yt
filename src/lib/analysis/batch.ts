@@ -1,7 +1,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { eq, inArray, notInArray } from "drizzle-orm";
 import { db } from "@/db";
-import { batches, transcripts, videos, type Batch, type Video } from "@/db/schema";
+import { analyses, batches, transcripts, videos, type Batch, type Video } from "@/db/schema";
 import { assertWithinCap, estimateBatchCostUsd, recordSpend } from "@/lib/spend";
 import { parseAnalysisResponse } from "./parse";
 import { DEFAULT_MODEL, estimateCostUsd, isAnalysisModel, toCostString, type AnalysisModel } from "./pricing";
@@ -29,6 +29,8 @@ export type BatchOutcome = {
   succeeded: number;
   failed: number;
   expired: number;
+  /** Entries skipped because a previous collection of this batch already wrote them (PR-32). */
+  alreadyWritten: number;
   actualUsd: number;
 };
 
@@ -289,11 +291,43 @@ export async function collectBatchResults(
   // Prefer the model the batch was actually submitted with; an explicit option
   // still wins, for collecting a batch submitted before this table existed.
   const model = options.model ?? (await batchModel(batchId)) ?? DEFAULT_MODEL;
-  const outcome: BatchOutcome = { succeeded: 0, failed: 0, expired: 0, actualUsd: 0 };
+  const outcome: BatchOutcome = {
+    succeeded: 0,
+    failed: 0,
+    expired: 0,
+    alreadyWritten: 0,
+    actualUsd: 0,
+  };
+
+  /**
+   * Videos this batch has already been collected for.
+   *
+   * Collection marks a batch `collected` only after writing everything, so a
+   * crash partway leaves the row open and the next run streams the same results
+   * again. `analyses` is append-only, so re-writing them inserts duplicate rows
+   * — and, worse, `insertAnalysis` records spend, so the second pass charges the
+   * monthly counter a second time for money that was spent once.
+   *
+   * Read once up front rather than checked per entry: a batch is up to a few
+   * hundred videos, and this is one indexed query against N round trips.
+   */
+  const alreadyWritten = new Set(
+    (
+      await db
+        .select({ videoId: analyses.videoId })
+        .from(analyses)
+        .where(eq(analyses.batchId, batchId))
+    ).map((row) => row.videoId),
+  );
 
   for await (const entry of await anthropic().messages.batches.results(batchId)) {
     const videoId = parseCustomId(entry.custom_id);
     if (videoId === null) continue;
+
+    if (alreadyWritten.has(videoId)) {
+      outcome.alreadyWritten += 1;
+      continue;
+    }
 
     if (entry.result.type !== "succeeded") {
       // errored / canceled / expired — record it so the backfill can see why

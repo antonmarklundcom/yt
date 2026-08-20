@@ -60,6 +60,9 @@ async function main(): Promise<void> {
           console.log(
             `\nCollected batch ${event.batchId}: ${event.outcome.succeeded} ok · ` +
               `${event.outcome.failed} failed · ${event.outcome.expired} expired · ` +
+              (event.outcome.alreadyWritten > 0
+                ? `${event.outcome.alreadyWritten} already written · `
+                : "") +
               `actual ${formatUsd(event.outcome.actualUsd)}`,
           );
           break;
