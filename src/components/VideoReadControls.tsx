@@ -1,4 +1,5 @@
-import { setVideoPinned, setVideoUnread } from "@/lib/read.actions";
+import { deleteVideo, setVideoPinned, setVideoUnread } from "@/lib/video.actions";
+import { ConfirmSubmitButton } from "./ConfirmSubmitButton";
 
 const BUTTON =
   "surface-border rounded-[var(--radius-sm)] px-3 py-1.5 text-xs font-medium text-[var(--color-ink)] transition-colors hover:border-[var(--color-accent)]";
@@ -19,6 +20,14 @@ export function VideoReadControls({ videoId, pinned }: { videoId: number; pinned
         <button type="submit" className={BUTTON}>
           Mark unread
         </button>
+      </form>
+      <form action={deleteVideo.bind(null, videoId)}>
+        <ConfirmSubmitButton
+          message="Delete this video, its transcript and every analysis of it? Re-analysing later costs money again."
+          className={`${BUTTON} text-[var(--color-danger)] hover:border-[var(--color-danger)]`}
+        >
+          Delete
+        </ConfirmSubmitButton>
       </form>
     </div>
   );
