@@ -88,16 +88,14 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
         sonnet: formatUsd(estimateAnalysisCostUsd(transcript.wordCount, "claude-sonnet-5")),
       }
     : null;
+  // Both statuses (PR-29). PR-16 made a failed generation write a row precisely
+  // so a paid failure would survive a reload — filtering them out here is what
+  // kept them invisible, which meant the row it preserved was never read.
   const outlineRows =
     analysis && analysis.status === "ok"
-      ? await db
-          .select()
-          .from(outlines)
-          // Failed generations now occupy a row too (PR-16); only successful
-          // ones are outlines as far as the page is concerned.
-          .where(and(eq(outlines.analysisId, analysis.id), eq(outlines.status, "ok")))
+      ? await db.select().from(outlines).where(eq(outlines.analysisId, analysis.id))
       : [];
-  const outlineByIdeaIndex = new Map(outlineRows.map((o) => [o.ideaIndex, o.content]));
+  const outlineByIdeaIndex = new Map(outlineRows.map((o) => [o.ideaIndex, o]));
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-10">
@@ -265,22 +263,30 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
           {!!analysis.ideas?.length && (
             <Section titleKey="section.ideas" locale={locale}>
               <ul className="flex flex-col gap-4">
-                {analysis.ideas.map((idea, i) => (
-                  <li key={i} className="surface-border rounded-[var(--radius-sm)] p-3">
-                    <p className="font-medium text-[var(--color-ink)]">{idea.title}</p>
-                    <p className="mt-1 text-sm text-[var(--color-ink-muted)]">{idea.premise}</p>
-                    <p className="mt-1 text-xs text-[var(--color-ink-muted)]">
-                      {t("ideas.whyNow")}: {idea.why_now}
-                    </p>
-                    <IdeaOutline
-                      analysisId={analysis.id}
-                      ideaIndex={i}
-                      videoId={video.id}
-                      outline={outlineByIdeaIndex.get(i) ?? null}
-                      canGenerate={canSpend}
-                    />
-                  </li>
-                ))}
+                {analysis.ideas.map((idea, i) => {
+                  const row = outlineByIdeaIndex.get(i);
+                  return (
+                    <li key={i} className="surface-border rounded-[var(--radius-sm)] p-3">
+                      <p className="font-medium text-[var(--color-ink)]">{idea.title}</p>
+                      <p className="mt-1 text-sm text-[var(--color-ink-muted)]">{idea.premise}</p>
+                      <p className="mt-1 text-xs text-[var(--color-ink-muted)]">
+                        {t("ideas.whyNow")}: {idea.why_now}
+                      </p>
+                      <IdeaOutline
+                        analysisId={analysis.id}
+                        ideaIndex={i}
+                        videoId={video.id}
+                        outline={row?.status === "ok" ? row.content : null}
+                        failure={
+                          row?.status === "failed"
+                            ? { error: row.error, rawResponse: row.rawResponse }
+                            : null
+                        }
+                        canGenerate={canSpend}
+                      />
+                    </li>
+                  );
+                })}
               </ul>
             </Section>
           )}
