@@ -87,7 +87,7 @@ async function recordOutlineFailure(input: {
 export async function generateOutline(
   analysisId: number,
   ideaIndex: number,
-  options: { model?: AnalysisModel } = {},
+  options: { model?: AnalysisModel; language?: string } = {},
 ): Promise<GenerateOutlineResult> {
   const model = options.model ?? DEFAULT_MODEL;
 
@@ -119,6 +119,7 @@ export async function generateOutline(
             ideaTitle: idea.title,
             ideaPremise: idea.premise,
             ideaWhyNow: idea.why_now,
+            language: options.language,
           }),
         },
       ],

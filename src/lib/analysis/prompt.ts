@@ -1,4 +1,4 @@
-import type { AnalysisPayload } from "./contract";
+import { isDefaultLanguage, type AnalysisPayload } from "./contract";
 
 /**
  * The analysis prompt (PLAN.md §4). Versioned via ANALYSIS_PROMPT_VERSION in
@@ -45,11 +45,29 @@ export const CACHE_NOTE =
   "Prompt caching is requested but will not engage on Haiku 4.5 unless the " +
   "system prompt exceeds 4096 tokens. Verify with cache_creation_input_tokens.";
 
+/**
+ * The instruction appended for a non-English run (PR-22b).
+ *
+ * It goes in the user turn, after the transcript, rather than in the system
+ * prompt: the system prompt is the cacheable half and must stay byte-identical
+ * across every video, and a trailing instruction is also the position a model
+ * weights most heavily.
+ */
+export function languageInstruction(language: string): string {
+  return `\n\nRespond in ${language}. Every field of the JSON must be written in ${language}, except timestamps.`;
+}
+
+/**
+ * When `language` is absent or "en" the output is byte-identical to what this
+ * function returned before PR-22b — that is what makes it safe to leave
+ * ANALYSIS_PROMPT_VERSION at 1 for English runs, and it is asserted by a test.
+ */
 export function buildUserPrompt(input: {
   title: string;
   channelTitle: string | null;
   durationSeconds: number | null;
   transcript: string;
+  language?: string;
 }): string {
   const meta = [
     `Title: ${input.title}`,
@@ -59,7 +77,8 @@ export function buildUserPrompt(input: {
     .filter(Boolean)
     .join("\n");
 
-  return `${meta}\n\nTranscript:\n\n${input.transcript}`;
+  const base = `${meta}\n\nTranscript:\n\n${input.transcript}`;
+  return isDefaultLanguage(input.language) ? base : base + languageInstruction(input.language!);
 }
 
 function formatDuration(seconds: number): string {
