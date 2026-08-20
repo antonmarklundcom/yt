@@ -173,6 +173,14 @@ export const en = {
   "notFound.video.body":
     "This video is not in the workspace. It may have been removed, or the link may be wrong.",
   "notFound.back": "Back to the digest",
+
+  "login.title": "Sign in",
+  "login.intro": "This workspace is private. Sign in with the account the seed script created.",
+  "login.email": "Email",
+  "login.password": "Password",
+  "login.signIn": "Sign in",
+  "login.signingIn": "Signing in…",
+  "login.signOut": "Sign out",
 } as const;
 
 export type TranslationKey = keyof typeof en;
@@ -338,6 +346,14 @@ export const sv: Record<TranslationKey, string> = {
   "notFound.video.body":
     "Videon finns inte i arbetsytan. Den kan ha tagits bort, eller så är länken fel.",
   "notFound.back": "Tillbaka till flödet",
+
+  "login.title": "Logga in",
+  "login.intro": "Den här arbetsytan är privat. Logga in med kontot som seed-skriptet skapade.",
+  "login.email": "E-post",
+  "login.password": "Lösenord",
+  "login.signIn": "Logga in",
+  "login.signingIn": "Loggar in…",
+  "login.signOut": "Logga ut",
 };
 
 export const DICTIONARIES = { en, sv } as const;
