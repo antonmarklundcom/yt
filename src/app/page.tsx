@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { requireUser } from "@/lib/auth/session";
 import { getLocale } from "@/lib/i18n/server";
 import { translator } from "@/lib/i18n";
 import { DigestFilters } from "@/components/DigestFilters";
@@ -29,6 +30,8 @@ export default async function Home({
   searchParams: Promise<SearchParams>;
 }) {
   const params = await searchParams;
+  // The feed shows *this* user's read state (PR-25), so it needs the row.
+  const user = await requireUser();
   const locale = await getLocale();
   const t = translator(locale);
   const q = params.q?.trim() ?? "";
@@ -37,7 +40,14 @@ export default async function Home({
   const sort = parseDigestSort(params.sort);
   const page = Number(params.page) || 1;
 
-  const result = await listDigestVideos({ q: q || undefined, status, filter, sort, page });
+  const result = await listDigestVideos({
+    userId: user.id,
+    q: q || undefined,
+    status,
+    filter,
+    sort,
+    page,
+  });
   const hasFilters = q !== "" || status !== undefined || filter !== undefined;
 
   return (
