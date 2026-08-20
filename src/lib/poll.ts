@@ -14,9 +14,11 @@ import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { sources, type Source } from "@/db/schema";
 import {
+  abandonStaleBatch,
   awaitBatch,
   batchStatus,
   collectBatchResults,
+  isStaleBatch,
   mapProviderStatus,
   markBatchStatus,
   openBatches,
@@ -56,6 +58,7 @@ export type PollEvent =
   | { phase: "quota-exhausted"; message: string }
   | { phase: "collected"; batchId: string; outcome: BatchOutcome }
   | { phase: "batch-unreadable"; batchId: string; message: string }
+  | { phase: "batch-abandoned"; batchId: string; estimatedUsd: number; message: string }
   | { phase: "pending"; count: number }
   | { phase: "submitted"; batchId: string; videoCount: number; estimatedUsd: number }
   | { phase: "batch-status"; batchId: string; status: string };
@@ -92,6 +95,8 @@ export type PollResult = {
   quotaExhausted: boolean;
   /** Batches that had already ended and were written to `analyses` this run. */
   collected: Array<{ batchId: string; outcome: BatchOutcome }>;
+  /** Batches given up on this run: unreadable for longer than STALE_BATCH_HOURS. */
+  abandoned: Array<{ batchId: string; estimatedUsd: number }>;
   pendingAnalysis: number;
   submitted: { batchId: string; videoCount: number; estimatedUsd: number } | null;
   /** Set when `submitted` is null — includes the dry-run estimate. */
@@ -158,6 +163,11 @@ export async function pollSources(options: PollOptions = {}): Promise<PollResult
     }
   }
 
+  // Filled by reconcileBatches below, and reported from every exit — like
+  // `results` and `quotaExhausted`, giving up on a batch is something the run
+  // did regardless of which branch it returns from.
+  let abandoned: PollResult["abandoned"] = [];
+
   const finish = async (
     partial: Pick<PollResult, "collected" | "pendingAnalysis" | "submitted" | "skipped" | "waited">,
   ): Promise<PollResult> => {
@@ -168,6 +178,7 @@ export async function pollSources(options: PollOptions = {}): Promise<PollResult
       durationMs: finishedAt.getTime() - startedAt.getTime(),
       sources: results,
       quotaExhausted,
+      abandoned,
       spend: { before, after: await spendStatus() },
       ...partial,
     };
@@ -189,6 +200,7 @@ export async function pollSources(options: PollOptions = {}): Promise<PollResult
   const reconciled = await reconcileBatches({ collect: !dryRun, onProgress });
   const collected = reconciled.collected;
   const inFlight = reconciled.inFlight;
+  abandoned = reconciled.abandoned;
 
   const pending = await findPendingVideos(pendingLimit);
   onProgress({ phase: "pending", count: pending.length });
@@ -331,8 +343,13 @@ async function pollSource(
 async function reconcileBatches(options: {
   collect: boolean;
   onProgress: (event: PollEvent) => void;
-}): Promise<{ collected: Array<{ batchId: string; outcome: BatchOutcome }>; inFlight: string[] }> {
+}): Promise<{
+  collected: Array<{ batchId: string; outcome: BatchOutcome }>;
+  abandoned: Array<{ batchId: string; estimatedUsd: number }>;
+  inFlight: string[];
+}> {
   const collected: Array<{ batchId: string; outcome: BatchOutcome }> = [];
+  const abandoned: Array<{ batchId: string; estimatedUsd: number }> = [];
   const inFlight: string[] = [];
 
   for (const row of await openBatches()) {
@@ -341,14 +358,19 @@ async function reconcileBatches(options: {
     try {
       status = mapProviderStatus((await batchStatus(id)).processing_status);
     } catch (err) {
-      // Leave the row open. If this is transient the next run collects it; if
-      // the batch is gone for good the row is the only remaining record that
-      // money was spent, so deleting it would erase the evidence.
-      options.onProgress({
-        phase: "batch-unreadable",
-        batchId: id,
-        message: err instanceof Error ? err.message : String(err),
-      });
+      const message = err instanceof Error ? err.message : String(err);
+      // Transient failures leave the row open — the next run collects it. But a
+      // row that has been unreadable for STALE_BATCH_HOURS is not late, and
+      // retrying it forever both spams the log and (since PR-26) holds its
+      // estimate against the cap for good. Give up, and bill the estimate so
+      // giving up does not also forgive the charge.
+      if (isStaleBatch(row.submittedAt)) {
+        const estimatedUsd = await abandonStaleBatch(row);
+        abandoned.push({ batchId: id, estimatedUsd });
+        options.onProgress({ phase: "batch-abandoned", batchId: id, estimatedUsd, message });
+        continue;
+      }
+      options.onProgress({ phase: "batch-unreadable", batchId: id, message });
       inFlight.push(id);
       continue;
     }
@@ -373,5 +395,5 @@ async function reconcileBatches(options: {
     options.onProgress({ phase: "collected", batchId: id, outcome });
   }
 
-  return { collected, inFlight };
+  return { collected, abandoned, inFlight };
 }
