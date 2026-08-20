@@ -45,7 +45,7 @@ async function main(): Promise<void> {
 
   const status = await spendStatus();
   console.log(
-    `Spend this month: ${formatUsd(status.monthToDateUsd)} of ${formatUsd(status.capUsd)} ` +
+    `Spend this month: ${formatUsd(status.projectedUsd)} of ${formatUsd(status.capUsd)} ` +
       `(${formatUsd(status.remainingUsd)} remaining)\n`,
   );
 
@@ -151,7 +151,7 @@ async function report(outcome: {
   console.log(`Actual cost: ${formatUsd(outcome.actualUsd)}`);
   const status = await spendStatus();
   console.log(
-    `Spend this month: ${formatUsd(status.monthToDateUsd)} of ${formatUsd(status.capUsd)}`,
+    `Spend this month: ${formatUsd(status.projectedUsd)} of ${formatUsd(status.capUsd)}`,
   );
 }
 

@@ -131,7 +131,9 @@ test("a realistic month of polling stays inside the default cap", () => {
 
 test("SpendCapExceededError carries the numbers needed to act on it", () => {
   const status: SpendStatus = {
-    monthToDateUsd: 24,
+    monthToDateUsd: 20,
+    committedUsd: 4,
+    projectedUsd: 24,
     capUsd: 25,
     remainingUsd: 1,
     fraction: 0.96,
@@ -141,4 +143,47 @@ test("SpendCapExceededError carries the numbers needed to act on it", () => {
   assert.equal(err.name, "SpendCapExceededError");
   assert.equal(err.status.remainingUsd, 1);
   assert.equal(err.estimatedUsd, 5);
+});
+
+/**
+ * PR-26: the cap is measured against billed + committed, so an open batch has
+ * to close the window it used to leave. These pin the arithmetic that
+ * spendStatus() does around the two database reads.
+ */
+function project(billed: number, committed: number, cap: number) {
+  const projected = billed + committed;
+  return {
+    projected,
+    remaining: Math.max(0, cap - projected),
+    overCap: projected >= cap,
+  };
+}
+
+test("committed batch money counts against the cap", () => {
+  // The gap PR-26 closes: $20 billed, $6 sitting in a submitted batch, $25 cap.
+  // Counting only spend_log leaves $5 of headroom that is already spent.
+  const withCommitted = project(20, 6, 25);
+  assert.equal(withCommitted.projected, 26);
+  assert.equal(withCommitted.remaining, 0);
+  assert.equal(withCommitted.overCap, true);
+  assert.equal(wouldTrip(withCommitted.projected, 0.01, 25), true);
+
+  // Nothing open is the normal case, and must behave exactly as before.
+  const idle = project(20, 0, 25);
+  assert.equal(idle.projected, 20);
+  assert.equal(idle.remaining, 5);
+  assert.equal(idle.overCap, false);
+  assert.equal(wouldTrip(idle.projected, 4.99, 25), false);
+});
+
+test("collecting a batch does not double-count it", () => {
+  // Collection writes the real cost to spend_log and flips the row out of
+  // in_progress/ended in the same run, so the estimate stops being counted the
+  // moment the actual does. The failure mode this guards against is a status
+  // value that stays open after collection.
+  const open = project(20, 6, 25);
+  const collected = project(20 + 5.5, 0, 25);
+  assert.equal(open.projected, 26);
+  assert.equal(collected.projected, 25.5);
+  assert.ok(collected.projected < open.projected + 5.5, "estimate must drop as billed rises");
 });

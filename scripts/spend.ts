@@ -31,7 +31,11 @@ async function main(): Promise<void> {
   const { start, end } = utcMonthRange();
 
   console.log(`Month ${start} … ${end} (UTC)`);
-  console.log(`  Spent      ${formatUsd(status.monthToDateUsd)}`);
+  console.log(`  Billed     ${formatUsd(status.monthToDateUsd)}`);
+  // Committed is the half of the picture spend_log cannot see (PR-26): batches
+  // submitted and not yet collected. It is normally 0 outside a poll window.
+  console.log(`  Committed  ${formatUsd(status.committedUsd)}   (open batches, not yet collected)`);
+  console.log(`  Projected  ${formatUsd(status.projectedUsd)}   (what the cap is measured against)`);
   console.log(`  Cap        ${formatUsd(status.capUsd)}   (MONTHLY_SPEND_CAP_USD)`);
   console.log(`  Remaining  ${formatUsd(status.remainingUsd)}`);
   console.log(`  ${meter(status.fraction)} ${Math.round(status.fraction * 100)}%`);
@@ -60,7 +64,10 @@ async function main(): Promise<void> {
 async function testCap(): Promise<void> {
   const cap = monthlyCapUsd();
   const before = await spendStatus();
-  console.log(`Cap ${formatUsd(cap)}, currently spent ${formatUsd(before.monthToDateUsd)}`);
+  console.log(
+    `Cap ${formatUsd(cap)}, currently projected ${formatUsd(before.projectedUsd)} ` +
+      `(${formatUsd(before.monthToDateUsd)} billed + ${formatUsd(before.committedUsd)} committed)`,
+  );
 
   const nudge = Math.max(0.01, before.remainingUsd + 0.01);
   console.log(`Adding ${formatUsd(nudge)} to today's spend to push over the cap…`);
@@ -68,7 +75,7 @@ async function testCap(): Promise<void> {
 
   try {
     const during = await spendStatus();
-    console.log(`  month-to-date is now ${formatUsd(during.monthToDateUsd)}`);
+    console.log(`  projected spend is now ${formatUsd(during.projectedUsd)}`);
 
     let tripped = false;
     try {
@@ -93,7 +100,7 @@ async function testCap(): Promise<void> {
       .set({ costUsd: sql`greatest(0, ${spendLog.costUsd} - ${nudge.toFixed(6)})` })
       .where(eq(spendLog.day, day));
     const after = await spendStatus();
-    console.log(`  Restored: month-to-date back to ${formatUsd(after.monthToDateUsd)}`);
+    console.log(`  Restored: billed month-to-date back to ${formatUsd(after.monthToDateUsd)}`);
   }
 }
 
