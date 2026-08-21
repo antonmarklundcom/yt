@@ -17,7 +17,13 @@ import { CaptionBadge } from "@/components/CaptionBadge";
 import { CopyAnalysisButton } from "@/components/CopyAnalysisButton";
 import { CopyTextButton } from "@/components/CopyTextButton";
 import { IdeaOutline } from "@/components/IdeaOutline";
-import { formatDate, formatDuration } from "@/lib/format";
+import {
+  formatCompactNumber,
+  formatDate,
+  formatDuration,
+  formatLikeRate,
+  likesPerThousandViews,
+} from "@/lib/format";
 
 /**
  * Selects the title alone rather than reusing the page's query — this runs
@@ -106,6 +112,30 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
             {video.channelTitle ?? t("video.unknownChannel")} ·{" "}
             {formatDate(video.publishedAt, locale)} · {formatDuration(video.durationSeconds)}
           </span>
+        </div>
+        {/* [PR-33] Reach and reaction, side by side. Each counter is skipped
+            when the uploader hides it rather than rendered as zero. */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--color-ink-muted)]">
+          {video.viewCount !== null && (
+            <span>
+              {formatCompactNumber(video.viewCount, locale)} {t("card.views")}
+            </span>
+          )}
+          {video.likeCount !== null && (
+            <span>
+              {formatCompactNumber(video.likeCount, locale)} {t("video.likes")}
+            </span>
+          )}
+          {video.commentCount !== null && (
+            <span>
+              {formatCompactNumber(video.commentCount, locale)} {t("video.comments")}
+            </span>
+          )}
+          {likesPerThousandViews(video.likeCount, video.viewCount) !== null && (
+            <span>
+              {formatLikeRate(video.likeCount, video.viewCount, locale)} {t("card.likeRate")}
+            </span>
+          )}
         </div>
         <h1 className="text-2xl font-semibold text-balance text-[var(--color-ink)]">
           {video.title}

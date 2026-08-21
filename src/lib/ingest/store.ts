@@ -22,10 +22,13 @@ export async function upsertVideoFromMetadata(
     youtubeId: meta.youtubeId,
     sourceId,
     title: meta.title,
+    description: meta.description,
     channelTitle: meta.channelTitle || null,
     publishedAt: meta.publishedAt,
     durationSeconds: meta.durationSeconds,
     viewCount: meta.viewCount,
+    likeCount: meta.likeCount,
+    commentCount: meta.commentCount,
     thumbnailUrl: meta.thumbnailUrl,
   };
 
@@ -35,13 +38,18 @@ export async function upsertVideoFromMetadata(
     .onDuplicateKeyUpdate({
       set: {
         title: values.title,
+        description: values.description,
         channelTitle: values.channelTitle,
         publishedAt: values.publishedAt,
         durationSeconds: values.durationSeconds,
-        // View count is the one field worth refreshing on re-ingest; the rest
-        // rarely change and caption_status must NOT be reset here or every
-        // re-run would re-probe videos already known to have no captions.
+        // The counters are what re-ingest is for: they are the only fields that
+        // move on their own, and PR-33's outlier arithmetic is only as current
+        // as the last poll. The rest rarely change, and caption_status must NOT
+        // be reset here or every re-run would re-probe videos already known to
+        // have no captions.
         viewCount: values.viewCount,
+        likeCount: values.likeCount,
+        commentCount: values.commentCount,
         thumbnailUrl: values.thumbnailUrl,
         // Only claim a video for a source if it does not already belong to one.
         ...(sourceId !== null ? { sourceId } : {}),

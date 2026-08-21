@@ -120,10 +120,31 @@ export const videos = mysqlTable(
     /** Null for videos added directly by URL rather than discovered via a source. */
     sourceId: int("source_id"),
     title: varchar("title", { length: 512 }).notNull(),
+    /**
+     * [PR-33] The uploader's description, as written.
+     *
+     * Stored in full rather than truncated because the metadata screening
+     * (PR-35) reads it as its only evidence, and a description's useful signal
+     * — the links, the chapter list, the "in this video I finally" line — is as
+     * often at the end as at the start.
+     */
+    description: text("description"),
     channelTitle: varchar("channel_title", { length: 255 }),
     publishedAt: timestamp("published_at"),
     durationSeconds: int("duration_seconds"),
     viewCount: bigint("view_count", { mode: "number" }),
+    /**
+     * [PR-33] Null means the uploader hides the counter, not zero. Both are
+     * already in the `statistics` part the ingest has always requested, so
+     * these columns cost no additional YouTube quota.
+     *
+     * There is no dislike column and cannot be one: YouTube removed public
+     * dislike counts in 2021. The available engagement signal is likes against
+     * views, which is why the UI shows likes per thousand views rather than a
+     * like/dislike ratio.
+     */
+    likeCount: bigint("like_count", { mode: "number" }),
+    commentCount: bigint("comment_count", { mode: "number" }),
     thumbnailUrl: varchar("thumbnail_url", { length: 512 }),
     captionStatus: mysqlEnum("caption_status", ["unknown", "available", "none", "failed"])
       .notNull()

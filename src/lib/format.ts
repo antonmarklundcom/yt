@@ -39,3 +39,38 @@ export function formatCompactNumber(value: number | null, locale?: Locale): stri
   if (value === null) return "\u2014";
   return new Intl.NumberFormat(intl(locale), { notation: "compact" }).format(value);
 }
+
+/**
+ * Likes per thousand views — the only engagement ratio YouTube still permits.
+ *
+ * [PR-33] Dislike counts were removed from the public API in 2021, so the
+ * familiar like/dislike ratio cannot be computed by anyone, at any price. Likes
+ * against views is the available substitute: it is noisier (it moves with how
+ * much of the audience is logged in, and it drifts as a video ages) but it
+ * separates a video people merely clicked from one they finished.
+ *
+ * Per *thousand* rather than a percentage because the real values cluster
+ * between 1% and 6%, and "38" discriminates where "3.8%" reads as noise.
+ *
+ * Null when either counter is hidden or views are zero — a hidden like count is
+ * not a zero like count, and dividing by an unwatched video is meaningless.
+ */
+export function likesPerThousandViews(
+  likeCount: number | null,
+  viewCount: number | null,
+): number | null {
+  if (likeCount === null || viewCount === null || viewCount <= 0) return null;
+  return (likeCount / viewCount) * 1000;
+}
+
+export function formatLikeRate(
+  likeCount: number | null,
+  viewCount: number | null,
+  locale?: Locale,
+): string {
+  const rate = likesPerThousandViews(likeCount, viewCount);
+  if (rate === null) return "—";
+  return new Intl.NumberFormat(intl(locale), {
+    maximumFractionDigits: rate < 10 ? 1 : 0,
+  }).format(rate);
+}

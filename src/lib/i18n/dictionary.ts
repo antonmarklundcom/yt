@@ -72,6 +72,9 @@ export const en = {
   "card.pinned": "Pinned",
   "card.matchedAnalysis": "Matched inside the analysis",
   "card.views": "views",
+  "card.likeRate": "likes/1k views",
+  "video.likes": "likes",
+  "video.comments": "comments",
   "card.noThumbnail": "No thumbnail",
 
   "pagination.previous": "← Previous",
@@ -260,6 +263,9 @@ export const sv: Record<TranslationKey, string> = {
   "card.pinned": "Fäst",
   "card.matchedAnalysis": "Träff inne i analysen",
   "card.views": "visningar",
+  "card.likeRate": "gillningar/1k visningar",
+  "video.likes": "gillningar",
+  "video.comments": "kommentarer",
   "card.noThumbnail": "Ingen miniatyrbild",
 
   "pagination.previous": "← Föregående",
