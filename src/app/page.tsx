@@ -3,6 +3,7 @@ import { isOwner } from "@/lib/auth/roles";
 import { requireUser } from "@/lib/auth/session";
 import { DEFAULT_MODEL } from "@/lib/analysis/pricing";
 import { estimateAnalysisCostUsd } from "@/lib/spend";
+import { isCulled, screenMinScore } from "@/lib/screening/policy";
 import { BulkAnalyzeForm, SelectVideoCheckbox } from "@/components/BulkAnalyzeForm";
 import { getLocale } from "@/lib/i18n/server";
 import { translator } from "@/lib/i18n";
@@ -66,11 +67,17 @@ export default async function Home({
   // re-checks all of this server-side — this map is for the estimate and the
   // checkbox, not for permission.
   const canSpend = isOwner(user);
+  const minScore = screenMinScore();
   const estimates: Record<number, number> = {};
   if (canSpend) {
     for (const video of result.videos) {
       if (video.analysisStatus === "ok") continue;
       if (!video.transcriptWords) continue;
+      // [PR-35] A culled video is not offered for bulk analysis — the action
+      // refuses it anyway (findPendingVideosByIds), and a checkbox that submits
+      // into a silent no-op is worse than no checkbox. Its own page still has
+      // the button, which is where an override belongs: one video, one decision.
+      if (isCulled({ status: "ok", score: video.screenScore }, minScore)) continue;
       estimates[video.id] = estimateAnalysisCostUsd(video.transcriptWords, DEFAULT_MODEL, {
         batch: true,
       });

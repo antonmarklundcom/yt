@@ -5,6 +5,7 @@ import type { DigestVideo } from "@/lib/videos";
 import { formatCompactNumber, formatLikeRate, likesPerThousandViews, formatDate, formatDuration } from "@/lib/format";
 import { AnalysisBadge } from "./AnalysisBadge";
 import { CaptionBadge } from "./CaptionBadge";
+import { ScreenBadge } from "./ScreenBadge";
 
 export function VideoCard({ video, locale }: { video: DigestVideo; locale: Locale }) {
   const t = translator(locale);
@@ -72,6 +73,10 @@ export function VideoCard({ video, locale }: { video: DigestVideo; locale: Local
             state={analysisState(video.analysisStatus, video.captionStatus)}
             locale={locale}
           />
+          {/* [PR-35] Sits after the analysis badge on purpose: "pending
+              analysis · culled" reads as the sentence it is — queued, then
+              taken out of the queue and why. */}
+          <ScreenBadge score={video.screenScore} reason={video.screenReason} locale={locale} />
           <span className="ml-auto text-xs text-[var(--color-ink-muted)]">
             {formatDate(video.publishedAt, locale)} ·{" "}
             {formatCompactNumber(video.viewCount, locale)} {t("card.views")}

@@ -41,7 +41,8 @@ npm run db:migrate        # apply the schema
 npm run db:seed           # create the owner (needs ADMIN_EMAIL; ADMIN_PASSWORD sets the login)
 npm run ingest '<url>'    # add a video, playlist or channel
 npm run analyze -- --pending
-npm run poll              # poll tracked sources, submit a batch
+npm run poll              # poll tracked sources, screen, submit a batch
+npm run screen            # score pending videos on metadata alone (PR-35)
 npm run backfill          # analyse everything pending
 npm run spend             # month-to-date vs cap
 npm test                  # 67 unit tests, no network or database needed

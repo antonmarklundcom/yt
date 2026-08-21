@@ -64,6 +64,16 @@ export const en = {
   "caption.none": "No captions",
   "caption.failed": "Fetch failed",
 
+  // [PR-35] Gallringen. "Culled" rather than "skipped" or "filtered": the
+  // video is still there, still analysable, and still one click from being
+  // read — it has only been left out of what the poll run pays for.
+  "screen.culled": "Culled",
+  "screen.score": "Screen score",
+  "screen.culled.title": "Culled by the screen —",
+  "screen.kept.title": "Kept by the screen —",
+  "screen.culled.body":
+    "Scheduled runs will not spend an analysis on this video. Analysing it here still works.",
+
   "analysisState.analysed": "Analysed",
   "analysisState.failed": "Analysis failed",
   "analysisState.pending": "Pending analysis",
@@ -276,6 +286,13 @@ export const sv: Record<TranslationKey, string> = {
   "caption.available": "Har undertexter",
   "caption.none": "Saknar undertexter",
   "caption.failed": "Hämtning misslyckades",
+
+  "screen.culled": "Gallrad",
+  "screen.score": "Gallringspoäng",
+  "screen.culled.title": "Gallrad av screeningen —",
+  "screen.kept.title": "Godkänd av screeningen —",
+  "screen.culled.body":
+    "Schemalagda körningar lägger ingen analys på den här videon. Att analysera den härifrån går fortfarande.",
 
   "analysisState.analysed": "Analyserad",
   "analysisState.failed": "Analysen misslyckades",

@@ -65,6 +65,13 @@ The structured analysis output (§4) is roughly **2,500 output tokens**.
    > makes hits unlikely even past that. Budget against **~$12/month**, not $6. Still cheap;
    > do not pad the prompt just to reach the cache threshold.
 
+5. **[PR-35] Screen before you analyse.** The table above prices every video the
+   same because it has to; a channel does not. A metadata-only screening costs
+   roughly a twentieth of an analysis, and culling a third of a poll run's work
+   list saves more than any model choice on this page. It is also what makes
+   decision 1 revisitable: Sonnet on a third of the corpus costs less than Haiku
+   on all of it. See `docs/PR-35-SCREENING.md`.
+
 For comparison, AI audio transcription runs ~$0.006/minute → ~$0.18 per 30-min video.
 10 h/day of that is ~$3.60/day, ~$108/month. That is the number the paid tier must cover.
 
@@ -86,6 +93,7 @@ Hostinger Node slot
 scripts/
 ├── probe-captions.ts         PR-01 spike — proves the core assumption
 ├── poll-sources.ts           find new uploads on tracked sources
+├── screen.ts                 PR-35 gallring — score pending videos on metadata
 └── backfill.ts               analyse everything pending
 
 MySQL (Hostinger)             see §3
@@ -293,6 +301,14 @@ schema change beyond §10's pre-approved list.
 | **30** | Search says *why* a video matched — title vs. analysis, with an excerpt of the summary around the needle. |
 | **31** | `deleteVideo` runs in one transaction. |
 | **32** | Re-collecting a partially-written batch skips the rows it already wrote, instead of duplicating them and charging the spend counter twice. |
+
+### Round 4 — free signal, and the gallring
+
+| PR | Scope |
+|---|---|
+| **33** | Free metadata: `videos.description`, `like_count`, `comment_count` (migration 0007). All three already arrived in the `statistics`/`snippet` parts the ingest requested, so they cost no extra YouTube quota — and the description is what PR-35 screens on. |
+| **34** | The analysis contract's one free change: `topics`, `entities` and `content_type` (migration 0008), plus the writers that finally fill `topics`/`video_topics` and the new `entities`/`video_entities`. Free only because no analysis had ever been paid for; that window is now closed. |
+| **35** | Gallringen, step 1: a metadata-only screening (migration 0009, `screenings`) scores every pending video before the poll run pays to analyse it, and videos below `SCREEN_MIN_SCORE` leave the work list that scheduled runs buy. Fails open, stores a score rather than a verdict, and never blocks a per-video analyse button. `docs/PR-35-SCREENING.md`. |
 
 ## 10. Rules for round-2 autonomous PRs
 

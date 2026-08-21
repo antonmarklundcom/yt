@@ -48,8 +48,9 @@ restart, for env changes to take effect.
 
 ## 3. Migrations pending — six, not two
 
-A0 in `docs/HANDOFF-BATCH-A.md` said two. Round 2 added three more, and PR-25 a
-sixth:
+A0 in `docs/HANDOFF-BATCH-A.md` said two. Round 2 added three more, PR-25 a
+sixth, and round 4 three more again — **nine**, and every count below is
+current as of PR-35:
 
 | File | Effect | Risk |
 |---|---|---|
@@ -59,6 +60,9 @@ sixth:
 | `0004` | `users.password_hash` (nullable) | none, additive |
 | `0005` | role enum `admin`/`user` → `owner`/`employee` | **rewrites data** |
 | `0006` | `video_reads` table; backfill; drops `videos.read_at`/`pinned` | **moves data** |
+| `0007` | `videos.description`, `videos.like_count`, `videos.comment_count` (PR-33) | none, additive |
+| `0008` | `entities` + `video_entities` tables; `analyses.topics`/`entities`/`content_type` (PR-34) | none, additive |
+| `0009` | `screenings` table (PR-35) | none, additive |
 
 **0005 is the only one that touches existing rows.** It widens the enum to all
 four values, remaps `admin`→`owner` and `user`→`employee`, then narrows it. It
@@ -75,8 +79,9 @@ The `INSERT … SELECT` in the middle copies them to the owner(s) first, and it 
 to stay before the drops. **0006 must run after 0005**, because the backfill
 selects `users.role = 'owner'` — a value 0005 is what creates.
 
-`npm run db:check` should report **11 tables** — 0006 adds `video_reads`;
-0003/0004/0005 add columns, not tables.
+`npm run db:check` should report **14 tables** — 0006 adds `video_reads`, 0008
+adds `entities` and `video_entities` (PR-34), 0009 adds `screenings` (PR-35);
+0003/0004/0005/0007 add columns, not tables.
 
 ## 4. The corrected A0 sequence
 
@@ -102,9 +107,9 @@ From a machine whose IP is whitelisted in hPanel → Remote MySQL:
 export DATABASE_URL='mysql://user:pass@srv####.hstgr.io:3306/dbname'
 export ADMIN_EMAIL='you@example.com'
 export ADMIN_PASSWORD='<at least 12 characters>'   # NEW — this is your login
-npm run db:migrate     # applies all six
+npm run db:migrate     # applies all nine
 npm run db:seed        # creates/updates the owner and sets the password
-npm run db:check       # expect 11 tables
+npm run db:check       # expect 14 tables
 ```
 
 `drizzle-kit` auto-loads `.env`; **`tsx` does not** — export the vars in the

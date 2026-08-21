@@ -3,11 +3,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/db";
-import { outlines, transcripts, videoReads, videos } from "@/db/schema";
+import { outlines, screenings, transcripts, videoReads, videos } from "@/db/schema";
 import { latestAnalysisForVideo } from "@/lib/analysis/latest";
 import { DEFAULT_MODEL } from "@/lib/analysis/pricing";
 import { estimateAnalysisCostUsd, formatUsd } from "@/lib/spend";
 import { slugifyTag } from "@/lib/tags";
+import { isCulled, screenMinScore } from "@/lib/screening/policy";
 import { markVideoRead } from "@/lib/videos";
 import { isOwner } from "@/lib/auth/roles";
 import { requireUser } from "@/lib/auth/session";
@@ -82,6 +83,17 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
   const pinned = readState?.pinned ?? false;
 
   const analysis = await latestAnalysisForVideo(video.id);
+
+  // [PR-35] The gallring's judgement, if it has one. Read on every video rather
+  // than only on unanalysed ones: a score that turns out to have been wrong is
+  // exactly the thing worth seeing next to the analysis it nearly prevented.
+  const [screening] = await db
+    .select()
+    .from(screenings)
+    .where(eq(screenings.videoId, video.id))
+    .limit(1);
+  const minScore = screenMinScore();
+  const culled = isCulled(screening, minScore);
 
   // The estimate on the button needs the transcript's length, and its absence
   // is also what decides whether analysing is possible at all.
@@ -159,6 +171,33 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
           />
         </div>
       </div>
+
+      {/* [PR-35] What the screen thought, in its own words. Shown above the
+          analysis panel because when a video is culled this is the reason the
+          panel below says "not analysed", and an explanation that appears after
+          the thing it explains is read as an excuse. */}
+      {screening && screening.status === "ok" && (
+        <div
+          className={`surface-border surface-card mb-4 px-5 py-4 ${
+            culled ? "" : "opacity-80"
+          }`}
+        >
+          <p className="text-sm font-medium text-[var(--color-ink)]">
+            {t(culled ? "screen.culled.title" : "screen.kept.title")}{" "}
+            <span className="text-[var(--color-ink-muted)]">
+              {screening.score}/{minScore}
+            </span>
+          </p>
+          {screening.reason && (
+            <p className="mt-1 text-sm text-[var(--color-ink-muted)]">{screening.reason}</p>
+          )}
+          {culled && (
+            <p className="mt-2 text-xs text-[var(--color-ink-muted)]">
+              {t("screen.culled.body")}
+            </p>
+          )}
+        </div>
+      )}
 
       {!analysis && (
         <div className="surface-border surface-card flex flex-col items-center gap-4 px-6 py-12 text-center">

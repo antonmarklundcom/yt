@@ -15,6 +15,7 @@
  *   --no-analyze     ingest only; leave analysis to the backfill
  *   --wait           block until the batch finishes and write the results
  *   --dry-run        report what would be spent, submit nothing
+ *   --no-screen      skip the PR-35 gallring for this run
  */
 
 import { closeDb } from "../src/db";
@@ -30,6 +31,7 @@ async function main(): Promise<void> {
     analyze: !argv.includes("--no-analyze"),
     dryRun: argv.includes("--dry-run"),
     wait: argv.includes("--wait"),
+    screen: argv.includes("--no-screen") ? false : undefined,
     onProgress: (event) => {
       switch (event.phase) {
         case "sources":
@@ -74,6 +76,17 @@ async function main(): Promise<void> {
               `provider almost certainly charged for it.`,
           );
           break;
+        case "screening":
+          console.log(`\nScreening ${event.count} video(s) on metadata…`);
+          break;
+        case "screened": {
+          const r = event.result;
+          console.log(
+            `  ${r.screened - r.culled} kept · ${r.culled} culled · ${r.failed} failed · ` +
+              `${formatUsd(r.costUsd)} (bar: ${r.minScore})`,
+          );
+          break;
+        }
         case "pending":
           console.log(`\n${event.count} video(s) pending analysis.`);
           break;

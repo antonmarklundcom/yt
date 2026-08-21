@@ -4,6 +4,7 @@ import { describeMatch, type SearchMatch } from "@/lib/search-excerpt";
 import {
   analyses,
   entities,
+  screenings,
   topics,
   transcripts,
   videoEntities,
@@ -75,6 +76,15 @@ export type DigestVideo = Video & {
   /** This user's read state, from the LEFT JOIN — null when never opened. */
   readAt: Date | null;
   pinned: boolean;
+  /**
+   * [PR-35] The gallring's score, or null when the video has never been
+   * screened or its screening failed. A correlated subquery for the same reason
+   * as analysisStatus, even though `screenings` holds one row per video: a join
+   * here would still have to be a LEFT one, and the two idioms in one query
+   * would invite a later reader to "simplify" the wrong one into an inner join.
+   */
+  screenScore: number | null;
+  screenReason: string | null;
 };
 
 export type DigestPage = {
@@ -235,6 +245,14 @@ export async function listDigestVideos(query: DigestQuery): Promise<DigestPage> 
       )`,
       readAt: videoReads.readAt,
       pinned: videoReads.pinned,
+      screenScore: sql<number | null>`(
+        select s.score from ${screenings} s
+        where s.video_id = ${videos.id} and s.status = 'ok' limit 1
+      )`,
+      screenReason: sql<string | null>`(
+        select s.reason from ${screenings} s
+        where s.video_id = ${videos.id} and s.status = 'ok' limit 1
+      )`,
     })
     .from(videos)
     .leftJoin(videoReads, readsJoin)
