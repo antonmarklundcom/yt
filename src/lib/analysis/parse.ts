@@ -78,6 +78,12 @@ function validate(value: unknown): ParseResult {
       if (!gap) return [];
       return [{ gap, counter_angle: asString(entry["counter_angle"]) ?? "" }];
     }),
+    // [PR-34] Deduplicated on the way in. A model asked for topics will
+    // occasionally return "AI video" and "AI Video" in the same list, and two
+    // rows that differ only in case would split one shelf into two.
+    topics: stringList(value["topics"]),
+    entities: stringList(value["entities"]),
+    content_type: asString(value["content_type"])?.trim().toLowerCase() ?? "",
     ideas: asArray(value["ideas"]).flatMap((entry): AnalysisIdea[] => {
       if (!isRecord(entry)) return [];
       const title = asString(entry["title"]);
@@ -132,6 +138,30 @@ function extractFirstJsonObject(text: string): string | null {
     }
   }
   return null;
+}
+
+/**
+ * [PR-34] A list of tags: trimmed, blank-free, and deduplicated case- and
+ * whitespace-insensitively while keeping the first spelling the model chose.
+ *
+ * The first spelling wins rather than a lowercased one because these strings
+ * are rendered to a human — "Next.js" reads correctly and "next.js" does not.
+ * Matching is what gets normalised; display is not. `slugifyTag` in
+ * lib/tags.ts applies the same rule when projecting into the lookup tables, so
+ * the two never disagree about whether two tags are the same tag.
+ */
+function stringList(value: unknown): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of asArray(value)) {
+    const text = asString(item)?.trim();
+    if (!text) continue;
+    const key = text.toLowerCase().replace(/\s+/g, " ");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(text);
+  }
+  return out;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

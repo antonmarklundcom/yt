@@ -3,8 +3,12 @@ import { db } from "@/db";
 import { describeMatch, type SearchMatch } from "@/lib/search-excerpt";
 import {
   analyses,
+  entities,
+  topics,
   transcripts,
+  videoEntities,
   videoReads,
+  videoTopics,
   videos,
   type Analysis,
   type CaptionStatus,
@@ -32,6 +36,18 @@ export type DigestQuery = {
   q?: string;
   status?: CaptionStatus;
   filter?: ReadFilter;
+  /**
+   * [PR-34] Restrict to videos tagged with this topic or entity slug.
+   *
+   * The grouping pages are the feed with one extra condition rather than a
+   * parallel listing, so they inherit pagination, per-user read state, the
+   * search box and the cards for free — and so a change to any of those can
+   * never apply to one view and not the other.
+   */
+  topicSlug?: string;
+  entitySlug?: string;
+  /** [PR-34] Restrict to one shape of video: tutorial, case study, news… */
+  contentType?: string;
   sort?: DigestSort;
   page?: number;
 };
@@ -114,6 +130,37 @@ function matchesQuery(q: string) {
   );
 }
 
+function taggedWithTopic(slug: string) {
+  return sql`exists (
+    select 1 from ${videoTopics} vt
+    join ${topics} t on t.id = vt.topic_id
+    where vt.video_id = ${videos.id} and t.slug = ${slug}
+  )`;
+}
+
+function taggedWithEntity(slug: string) {
+  return sql`exists (
+    select 1 from ${videoEntities} ve
+    join ${entities} e on e.id = ve.entity_id
+    where ve.video_id = ${videos.id} and e.slug = ${slug}
+  )`;
+}
+
+/**
+ * The content type of the video's *newest successful* analysis.
+ *
+ * Ordered by id desc rather than filtered on all analyses: re-analysing a video
+ * can change its shape, and matching against every historical row would keep
+ * returning it under a label the current analysis has abandoned.
+ */
+function hasContentType(contentType: string) {
+  return sql`(
+    select a.content_type from ${analyses} a
+    where a.video_id = ${videos.id} and a.status = 'ok'
+    order by a.id desc limit 1
+  ) = ${contentType}`;
+}
+
 function orderFor(sort: DigestSort | undefined) {
   switch (sort) {
     case "added":
@@ -144,6 +191,14 @@ export async function listDigestVideos(query: DigestQuery): Promise<DigestPage> 
     // exists only because the video is pinned.
     query.filter === "unread" ? isNull(videoReads.readAt) : undefined,
     query.filter === "pinned" ? eq(videoReads.pinned, true) : undefined,
+    // [PR-34] EXISTS rather than a join: a video carries several topics, and
+    // joining would emit one row per matching tag and break the SQL-side
+    // pagination the feed depends on — the same reason analysisStatus is a
+    // correlated subquery.
+    query.topicSlug ? taggedWithTopic(query.topicSlug) : undefined,
+    query.entitySlug ? taggedWithEntity(query.entitySlug) : undefined,
+    // The newest analysis decides the shape, matching what the video page shows.
+    query.contentType ? hasContentType(query.contentType) : undefined,
   ].filter((c): c is NonNullable<typeof c> => c !== undefined);
   const where = conditions.length > 0 ? and(...conditions) : undefined;
 

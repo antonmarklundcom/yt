@@ -31,6 +31,12 @@ gaps — Where the video is weak, unsupported, or conveniently silent. counter_a
 
 ideas — Videos worth making, informed by this one but not copies of it. why_now should point at something real about the current moment, not a generic claim that the topic is popular.
 
+topics — Three to six subjects this video is about, at the level you would use to shelve it next to other videos. Write them as a reader would search for them: "local SEO", "prompt engineering", "cold email". Not the title, not a summary, not one-off specifics that will never recur. Reuse the obvious common phrasing rather than inventing a precise new label — these are only useful when the same subject in two videos produces the same string.
+
+entities — The named things the video actually discusses: tools, products, companies, people. Use the name as it is normally written ("Next.js", "Claude Code", "GoHighLevel"). Include something only if the video engages with it, not because it appeared once in a list. If the video names nothing, return an empty array rather than padding it with the channel or the host.
+
+content_type — The shape of the video, lowercase, one of: tutorial, case study, news, opinion, interview, review, listicle, demo, talk. If it is genuinely none of these, write the closest short label instead of forcing a fit.
+
 Base everything on the transcript. If it is too short, truncated, or garbled to support a field, say so plainly in that field rather than inventing content.`;
 
 /**
@@ -59,8 +65,13 @@ export function languageInstruction(language: string): string {
 
 /**
  * When `language` is absent or "en" the output is byte-identical to what this
- * function returned before PR-22b — that is what makes it safe to leave
- * ANALYSIS_PROMPT_VERSION at 1 for English runs, and it is asserted by a test.
+ * function returned before PR-22b, which is asserted by a test.
+ *
+ * That byte-identity is about the *user* turn only, and it is no longer what
+ * decides the stored version: PR-34 changed the system prompt, so every English
+ * run is version 2 regardless of what this function returns. The invariant is
+ * still worth keeping — it is what makes the language parameter provably inert
+ * when unused — but it is no longer load-bearing for version accounting.
  */
 export function buildUserPrompt(input: {
   title: string;
@@ -151,8 +162,25 @@ export const ANALYSIS_JSON_SCHEMA = {
         additionalProperties: false,
       },
     },
+    // [PR-34] Plain string arrays, and content_type is a plain string rather
+    // than an enum. The vocabulary lives in the prompt, where an unusual video
+    // produces an unusual label; as a schema enum it would produce a hard
+    // validation failure and cost the whole analysis over a taxonomy quibble.
+    topics: { type: "array", items: { type: "string" } },
+    entities: { type: "array", items: { type: "string" } },
+    content_type: { type: "string" },
   },
-  required: ["summary", "takeaways", "hook", "timeline", "gaps", "ideas"],
+  required: [
+    "summary",
+    "takeaways",
+    "hook",
+    "timeline",
+    "gaps",
+    "ideas",
+    "topics",
+    "entities",
+    "content_type",
+  ],
   additionalProperties: false,
 } as const;
 

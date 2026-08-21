@@ -24,6 +24,8 @@ type SearchParams = {
   q?: string;
   status?: string;
   filter?: string;
+  /** [PR-34] One shape of video, linked from the /topics page. */
+  type?: string;
   sort?: string;
   page?: string;
 };
@@ -44,15 +46,19 @@ export default async function Home({
   const sort = parseDigestSort(params.sort);
   const page = Number(params.page) || 1;
 
+  const contentType = params.type?.trim() || undefined;
+
   const result = await listDigestVideos({
     userId: user.id,
     q: q || undefined,
     status,
     filter,
+    contentType,
     sort,
     page,
   });
-  const hasFilters = q !== "" || status !== undefined || filter !== undefined;
+  const hasFilters =
+    q !== "" || status !== undefined || filter !== undefined || contentType !== undefined;
 
   // What a bulk selection would cost, priced per video from its transcript
   // length (PR-28). Only videos that could actually be submitted get an entry:

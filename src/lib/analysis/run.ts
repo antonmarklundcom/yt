@@ -13,6 +13,7 @@ import {
 } from "./pricing";
 import { ANALYSIS_JSON_SCHEMA, ANALYSIS_SYSTEM_PROMPT, buildUserPrompt } from "./prompt";
 import { recordSpend } from "@/lib/spend";
+import { syncVideoTags } from "@/lib/tags";
 
 /**
  * The analysis pipeline (PLAN.md §5 row 06): transcript -> Haiku 4.5 ->
@@ -235,6 +236,11 @@ export async function insertAnalysis(input: {
     timeline: payload?.timeline ?? null,
     gaps: payload?.gaps ?? null,
     ideas: payload?.ideas ?? null,
+    // [PR-34] The analysis's own immutable copy. Null on a failed row, and on
+    // any row written before the contract carried these fields.
+    topics: payload?.topics ?? null,
+    entities: payload?.entities ?? null,
+    contentType: payload?.content_type || null,
     rawResponse: input.rawResponse ?? null,
     error: input.error ?? null,
     batchId: input.batchId ?? null,
@@ -250,6 +256,30 @@ export async function insertAnalysis(input: {
   // Record spend from the same place the row is written, so no code path can
   // charge the account without the monthly counter seeing it (PR-07).
   await recordSpend(input.costUsd);
+
+  // [PR-34] Retag the video from this analysis. Every write path — interactive,
+  // backfill and batch collection — funnels through here, so this is the one
+  // place that can guarantee the lookup tables never drift from the analyses.
+  //
+  // Only on success, and only when the payload carries the fields: a failed row
+  // has no opinion about what the video is about, and clearing a video's tags
+  // because one re-analysis errored would lose grouping the owner already paid
+  // for.
+  //
+  // Deliberately outside the spend recording above and tolerant of its own
+  // failure: the analysis is bought and stored by this point, and losing the
+  // whole row — along with the money — because a tag insert deadlocked would
+  // trade a real asset for a derived index that the next analysis rebuilds.
+  if (input.status === "ok" && payload && (payload.topics.length || payload.entities.length)) {
+    try {
+      await syncVideoTags(input.videoId, { topics: payload.topics, entities: payload.entities });
+    } catch (err) {
+      console.warn(
+        `analysis ${result.insertId} stored, but tagging video ${input.videoId} failed: ` +
+          (err instanceof Error ? err.message : String(err)),
+      );
+    }
+  }
 
   const [row] = await db
     .select()
