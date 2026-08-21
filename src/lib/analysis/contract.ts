@@ -1,5 +1,18 @@
 /**
- * PLAN.md §4 — the analysis contract. FROZEN.
+ * PLAN.md §4 — the analysis contract.
+ *
+ * UNFROZEN ONCE, BY PR-34, AND RE-FROZEN HERE. Read this before adding a field.
+ *
+ * The freeze was never about the shape being perfect. It was about the fact
+ * that changing it costs money: every analysis already stored was paid for
+ * under the old prompt, and a new field means either re-analysing the corpus to
+ * fill it or living with a column that is null for everything older than the
+ * change. PR-34 is the one moment that cost is zero — no analysis has ever been
+ * run against the real API, so the corpus to re-analyse is empty.
+ *
+ * That window closes the first time the live app pays for a batch. After that,
+ * adding a field here is a spend decision, not a code decision, and it belongs
+ * in a plan rather than in a pull request.
  *
  * This is the interface the Opus track (PR-06 produces it) and the Sonnet track
  * (PR-10 renders it) share. Types live here rather than in the schema or the
@@ -43,14 +56,71 @@ export type AnalysisPayload = {
   timeline: AnalysisTimelineEntry[];
   gaps: AnalysisGap[];
   ideas: AnalysisIdea[];
+
+  /**
+   * [PR-34] Open-ended subject tags — what the video is *about*, at the level
+   * you would use to shelve it.
+   *
+   * PLAN.md §7 sized topic intelligence as a query over stored analyses rather
+   * than a re-ingest, and reserved the `topics` / `video_topics` tables for it.
+   * What §7 never noticed — and docs/HANDOFF-ROUND-3.md §3 eventually caught —
+   * is that nothing produced topics in the first place: the contract had no
+   * field, so the tables could only ever have stayed empty. This is that field.
+   *
+   * No topic is hardcoded anywhere (§7), and none ever should be. The whole
+   * value is that the corpus tells you what it is about instead of being sorted
+   * into categories chosen before the first video was read.
+   *
+   * Distinct from `timeline[].topic`, which labels a passage within one video
+   * and is far too granular to group across the corpus.
+   */
+  topics: string[];
+
+  /**
+   * [PR-34] Named things the video actually discusses — tools, products,
+   * companies, people.
+   *
+   * Kept separate from `topics` because they answer different questions. A
+   * topic is what to read next; an entity is what the market is talking about.
+   * "When did people start mentioning this tool, and who mentioned it first"
+   * is not a question topics can answer, and it is the question most likely to
+   * change what its reader does next.
+   *
+   * Flat strings rather than {name, kind} pairs. A kind field would have to be
+   * either a hardcoded vocabulary — the thing §7 forbids — or a free string
+   * nobody groups on, and the query that matters ("which videos mention X")
+   * needs neither.
+   */
+  entities: string[];
+
+  /**
+   * [PR-34] The shape of the video: tutorial, case study, news, opinion,
+   * interview, review, and so on.
+   *
+   * Grouping by topic alone produces shelves too wide to act on — "everything
+   * about SEO" is not a reading list. Crossed with content_type it becomes one:
+   * "case studies about SEO" is six videos and an afternoon.
+   *
+   * A plain string, not an enum. The prompt suggests a vocabulary and the model
+   * follows it closely, but a schema enum would hard-fail a video that is
+   * genuinely something else, and losing a whole analysis to a taxonomy quibble
+   * is a worse outcome than an occasional one-off label.
+   */
+  content_type: string;
 };
 
 /**
  * Bump when the prompt changes in a way that alters the meaning of stored
  * output, so old analyses stay interpretable rather than silently mixing
  * conventions. Stored per row as `analyses.prompt_version`.
+ *
+ * 1 — PR-06 through PR-32. summary/takeaways/hook/timeline/gaps/ideas.
+ * 2 — PR-34 adds topics, entities and content_type. A version-1 row is not
+ *     wrong, it is merely untagged: readers must treat those three fields as
+ *     absent rather than empty, or a pre-PR-34 analysis looks like a video
+ *     about nothing.
  */
-export const ANALYSIS_PROMPT_VERSION = 1;
+export const ANALYSIS_PROMPT_VERSION = 2;
 
 /**
  * Output language (PLAN.md §9 PR-22b) — preparation, not a feature.

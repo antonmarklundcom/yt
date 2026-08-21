@@ -1,11 +1,13 @@
 import { and, eq } from "drizzle-orm";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/db";
 import { outlines, transcripts, videoReads, videos } from "@/db/schema";
 import { latestAnalysisForVideo } from "@/lib/analysis/latest";
 import { DEFAULT_MODEL } from "@/lib/analysis/pricing";
 import { estimateAnalysisCostUsd, formatUsd } from "@/lib/spend";
+import { slugifyTag } from "@/lib/tags";
 import { markVideoRead } from "@/lib/videos";
 import { isOwner } from "@/lib/auth/roles";
 import { requireUser } from "@/lib/auth/session";
@@ -17,7 +19,13 @@ import { CaptionBadge } from "@/components/CaptionBadge";
 import { CopyAnalysisButton } from "@/components/CopyAnalysisButton";
 import { CopyTextButton } from "@/components/CopyTextButton";
 import { IdeaOutline } from "@/components/IdeaOutline";
-import { formatDate, formatDuration } from "@/lib/format";
+import {
+  formatCompactNumber,
+  formatDate,
+  formatDuration,
+  formatLikeRate,
+  likesPerThousandViews,
+} from "@/lib/format";
 
 /**
  * Selects the title alone rather than reusing the page's query — this runs
@@ -106,6 +114,30 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
             {video.channelTitle ?? t("video.unknownChannel")} ·{" "}
             {formatDate(video.publishedAt, locale)} · {formatDuration(video.durationSeconds)}
           </span>
+        </div>
+        {/* [PR-33] Reach and reaction, side by side. Each counter is skipped
+            when the uploader hides it rather than rendered as zero. */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--color-ink-muted)]">
+          {video.viewCount !== null && (
+            <span>
+              {formatCompactNumber(video.viewCount, locale)} {t("card.views")}
+            </span>
+          )}
+          {video.likeCount !== null && (
+            <span>
+              {formatCompactNumber(video.likeCount, locale)} {t("video.likes")}
+            </span>
+          )}
+          {video.commentCount !== null && (
+            <span>
+              {formatCompactNumber(video.commentCount, locale)} {t("video.comments")}
+            </span>
+          )}
+          {likesPerThousandViews(video.likeCount, video.viewCount) !== null && (
+            <span>
+              {formatLikeRate(video.likeCount, video.viewCount, locale)} {t("card.likeRate")}
+            </span>
+          )}
         </div>
         <h1 className="text-2xl font-semibold text-balance text-[var(--color-ink)]">
           {video.title}
@@ -203,6 +235,28 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
             )}
             <CopyAnalysisButton video={video} analysis={analysis} />
           </div>
+
+          {/* [PR-34] The video's tags, each one a link into the shelf it shares
+              with everything else carrying it. Placed above the summary because
+              the useful move after reading one analysis is usually sideways —
+              to the other four videos about the same thing. */}
+          {(!!analysis.topics?.length ||
+            !!analysis.entities?.length ||
+            !!analysis.contentType) && (
+            <div className="mb-6 flex flex-wrap items-center gap-2">
+              {analysis.contentType && (
+                <span className="rounded-full bg-[var(--color-surface-raised)] px-3 py-1 text-xs text-[var(--color-ink-muted)]">
+                  {analysis.contentType}
+                </span>
+              )}
+              {analysis.topics?.map((topic) => (
+                <TagLink key={`t-${topic}`} kind="topic" name={topic} />
+              ))}
+              {analysis.entities?.map((entity) => (
+                <TagLink key={`e-${entity}`} kind="entity" name={entity} />
+              ))}
+            </div>
+          )}
 
           {analysis.summary && (
             <Section titleKey="section.summary" locale={locale}>
@@ -321,5 +375,32 @@ function Field({ label, value }: { label: string; value: string }) {
       <dt className="text-xs text-[var(--color-ink-muted)]">{label}</dt>
       <dd className="mt-0.5 text-[var(--color-ink)]">{value}</dd>
     </div>
+  );
+}
+
+/**
+ * [PR-34] A tag, linked to its shelf.
+ *
+ * The href is built from the display name through the same slugifier the write
+ * path uses, rather than from a stored slug: the analysis payload holds names,
+ * not slugs, and re-deriving guarantees the link and the row agree. If they
+ * ever disagreed the link would 404, which is at least loud.
+ */
+function TagLink({ kind, name }: { kind: "topic" | "entity"; name: string }) {
+  const slug = slugifyTag(name);
+  if (!slug) return null;
+  return (
+    <Link
+      href={`/topics/${kind}/${encodeURIComponent(slug)}`}
+      className={
+        "rounded-full border px-3 py-1 text-xs transition-colors " +
+        "focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:outline-none " +
+        (kind === "entity"
+          ? "border-[var(--color-accent)]/40 text-[var(--color-accent)] hover:border-[var(--color-accent)]"
+          : "border-[var(--color-line)] text-[var(--color-ink)] hover:border-[var(--color-accent)]")
+      }
+    >
+      {name}
+    </Link>
   );
 }

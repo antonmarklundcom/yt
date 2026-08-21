@@ -20,11 +20,25 @@ const MAX_BATCH = 50;
 export type VideoMetadata = {
   youtubeId: string;
   title: string;
+  /**
+   * The uploader's description. Already present in the `snippet` part every
+   * videos.list call requests, so it costs no extra quota — it was simply
+   * discarded before PR-33. The metadata screening (PR-35) reads it instead of
+   * the transcript, which is the whole reason that pass is nearly free.
+   */
+  description: string | null;
   channelId: string;
   channelTitle: string;
   publishedAt: Date | null;
   durationSeconds: number | null;
   viewCount: number | null;
+  /**
+   * Absent when the uploader hides likes. Dislikes have not been public since
+   * 2021, so the only ratio available is likes-per-view — see
+   * `likesPerThousandViews` in src/lib/format.ts.
+   */
+  likeCount: number | null;
+  commentCount: number | null;
   thumbnailUrl: string | null;
   /** True for scheduled/live streams, which have no stable duration yet. */
   isLive: boolean;
@@ -367,17 +381,34 @@ function parseVideo(raw: unknown): VideoMetadata {
   return {
     youtubeId: String(item["id"] ?? ""),
     title: String(snippet["title"] ?? "Untitled"),
+    description: typeof snippet["description"] === "string" ? snippet["description"] : null,
     channelId: String(snippet["channelId"] ?? ""),
     channelTitle: String(snippet["channelTitle"] ?? ""),
     publishedAt: published && !Number.isNaN(published.getTime()) ? published : null,
     durationSeconds: parseIso8601Duration(
       typeof details["duration"] === "string" ? details["duration"] : null,
     ),
-    // viewCount arrives as a string, and is absent when the owner hides counts.
-    viewCount: stats["viewCount"] !== undefined ? Number(stats["viewCount"]) || 0 : null,
+    // Counts arrive as strings, and are absent when the owner hides them.
+    viewCount: countFrom(stats["viewCount"]),
+    likeCount: countFrom(stats["likeCount"]),
+    commentCount: countFrom(stats["commentCount"]),
     thumbnailUrl: bestThumbnail(snippet["thumbnails"]),
     isLive: Object.keys(live).length > 0 && !live["actualEndTime"],
   };
+}
+
+/**
+ * A statistics counter, or null when YouTube omits it.
+ *
+ * Absent and zero are different facts: a video with likes hidden is not a video
+ * with no likes, and averaging the two together would quietly understate every
+ * channel that hides one counter. Null survives to the column so the UI can say
+ * "hidden" rather than "0".
+ */
+function countFrom(raw: unknown): number | null {
+  if (raw === undefined || raw === null) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
 }
 
 function parseChannel(raw: unknown): ChannelMetadata {

@@ -120,10 +120,31 @@ export const videos = mysqlTable(
     /** Null for videos added directly by URL rather than discovered via a source. */
     sourceId: int("source_id"),
     title: varchar("title", { length: 512 }).notNull(),
+    /**
+     * [PR-33] The uploader's description, as written.
+     *
+     * Stored in full rather than truncated because the metadata screening
+     * (PR-35) reads it as its only evidence, and a description's useful signal
+     * — the links, the chapter list, the "in this video I finally" line — is as
+     * often at the end as at the start.
+     */
+    description: text("description"),
     channelTitle: varchar("channel_title", { length: 255 }),
     publishedAt: timestamp("published_at"),
     durationSeconds: int("duration_seconds"),
     viewCount: bigint("view_count", { mode: "number" }),
+    /**
+     * [PR-33] Null means the uploader hides the counter, not zero. Both are
+     * already in the `statistics` part the ingest has always requested, so
+     * these columns cost no additional YouTube quota.
+     *
+     * There is no dislike column and cannot be one: YouTube removed public
+     * dislike counts in 2021. The available engagement signal is likes against
+     * views, which is why the UI shows likes per thousand views rather than a
+     * like/dislike ratio.
+     */
+    likeCount: bigint("like_count", { mode: "number" }),
+    commentCount: bigint("comment_count", { mode: "number" }),
     thumbnailUrl: varchar("thumbnail_url", { length: 512 }),
     captionStatus: mysqlEnum("caption_status", ["unknown", "available", "none", "failed"])
       .notNull()
@@ -198,6 +219,25 @@ export const analyses = mysqlTable(
     timeline: json("timeline").$type<AnalysisTimelineEntry[]>(),
     gaps: json("gaps").$type<AnalysisGap[]>(),
     ideas: json("ideas").$type<AnalysisIdea[]>(),
+
+    /**
+     * [PR-34] The payload's own copy of the grouping fields.
+     *
+     * Duplicated with the `topics`/`video_topics` and `entities`/
+     * `video_entities` lookup tables on purpose, and the duplication is not
+     * redundancy: these columns are what the *analysis* said, immutably, and
+     * the link tables are what the *video* is currently tagged with. Those
+     * differ the moment a video is re-analysed — the new run replaces the
+     * video's links, while every stored analysis keeps the tags it was paid
+     * for. Without these columns, re-analysing would silently rewrite the
+     * history of what earlier runs concluded.
+     *
+     * Null on a version-1 row, which means "this analysis predates the field",
+     * not "this video is about nothing".
+     */
+    topics: json("topics").$type<string[]>(),
+    entities: json("entities").$type<string[]>(),
+    contentType: varchar("content_type", { length: 64 }),
 
     /** [+§3] §4: "store raw response on parse failure". */
     rawResponse: longtext("raw_response"),
@@ -329,10 +369,21 @@ export const outlines = mysqlTable(
 // ---------------------------------------------------------------------------
 
 /**
- * Nothing in v1 reads these. They exist so PLAN.md §7 (cross-corpus topic
- * intelligence) is a filter over stored analyses rather than a re-ingest of the
- * entire corpus. Topics are assigned at analysis time and are entirely
- * open-ended — no topic is hardcoded anywhere (§7).
+ * The cross-corpus grouping index (PLAN.md §7).
+ *
+ * [PR-34] These finally have a writer. From PR-03 until now they were empty by
+ * construction — PLAN.md §7 reserved them for topic intelligence, but the
+ * analysis contract had no topics field, so nothing ever produced a row to
+ * store. docs/HANDOFF-ROUND-3.md §3 caught the gap; PR-34 closes it by adding
+ * the field rather than by deriving topics from `timeline[].topic`, which
+ * labels passages inside one video and does not group across the corpus.
+ *
+ * Rows are (re)written whenever an analysis for the video succeeds, so the
+ * links always reflect the newest analysis. `slug` is the match key and `name`
+ * is the display form — see slugifyTag in lib/tags.ts.
+ *
+ * No topic is hardcoded anywhere (§7), and none should ever be. The corpus
+ * says what it is about; the code does not decide in advance.
  */
 export const topics = mysqlTable(
   "topics",
@@ -353,6 +404,38 @@ export const videoTopics = mysqlTable(
   (t) => [
     primaryKey({ columns: [t.videoId, t.topicId] }),
     index("video_topics_topic_idx").on(t.topicId),
+  ],
+);
+
+/**
+ * [PR-34] Named things a video discusses — tools, products, companies, people.
+ *
+ * A separate pair of tables rather than a `kind` column on `topics` because the
+ * two are asked different questions and rendered differently: topics answer
+ * "what should I read next", entities answer "who is talking about this tool,
+ * and since when". Overloading one table would also have meant re-keying its
+ * unique index on (kind, slug), and the join table would have needed the same —
+ * more migration surface than two small additive tables, for less clarity.
+ */
+export const entities = mysqlTable(
+  "entities",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    name: varchar("name", { length: 128 }).notNull(),
+    slug: varchar("slug", { length: 128 }).notNull(),
+  },
+  (t) => [uniqueIndex("entities_slug_idx").on(t.slug)],
+);
+
+export const videoEntities = mysqlTable(
+  "video_entities",
+  {
+    videoId: int("video_id").notNull(),
+    entityId: int("entity_id").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.videoId, t.entityId] }),
+    index("video_entities_entity_idx").on(t.entityId),
   ],
 );
 

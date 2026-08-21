@@ -2,7 +2,7 @@ import Link from "next/link";
 import { analysisState } from "@/lib/analysis/state";
 import { translator, type Locale } from "@/lib/i18n";
 import type { DigestVideo } from "@/lib/videos";
-import { formatCompactNumber, formatDate, formatDuration } from "@/lib/format";
+import { formatCompactNumber, formatLikeRate, likesPerThousandViews, formatDate, formatDuration } from "@/lib/format";
 import { AnalysisBadge } from "./AnalysisBadge";
 import { CaptionBadge } from "./CaptionBadge";
 
@@ -75,6 +75,16 @@ export function VideoCard({ video, locale }: { video: DigestVideo; locale: Local
           <span className="ml-auto text-xs text-[var(--color-ink-muted)]">
             {formatDate(video.publishedAt, locale)} ·{" "}
             {formatCompactNumber(video.viewCount, locale)} {t("card.views")}
+            {/* [PR-33] Engagement, not just reach. Rendered only when the
+                uploader publishes both counters — a hidden like count is not a
+                zero one, so the absent case shows nothing rather than "0". */}
+            {likesPerThousandViews(video.likeCount, video.viewCount) !== null && (
+              <>
+                {" · "}
+                {formatLikeRate(video.likeCount, video.viewCount, locale)}{" "}
+                {t("card.likeRate")}
+              </>
+            )}
           </span>
         </div>
       </div>
