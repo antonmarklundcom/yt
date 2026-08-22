@@ -27,6 +27,8 @@ import {
 } from "@/lib/analysis/batch";
 import { DEFAULT_MODEL, isAnalysisModel, type AnalysisModel } from "@/lib/analysis/pricing";
 import { findPendingVideos } from "@/lib/analysis/run";
+import { screeningEnabled } from "@/lib/screening/policy";
+import { findUnscreenedVideos, screenVideos, type ScreenRunResult } from "@/lib/screening/run";
 import { ingestRef } from "@/lib/ingest";
 import {
   estimateBatchCostUsd,
@@ -42,6 +44,10 @@ export type PollOptions = {
   limit?: number;
   /** Cap on videos considered for analysis in one run. */
   pendingLimit?: number;
+  /** [PR-35] Cap on videos screened in one run. */
+  screenLimit?: number;
+  /** [PR-35] Skip the gallring for this run, whatever SCREENING_ENABLED says. */
+  screen?: boolean;
   /** Ingest only; leave analysis to the backfill. */
   analyze?: boolean;
   /** Report what would be spent, submit nothing. */
@@ -59,6 +65,8 @@ export type PollEvent =
   | { phase: "collected"; batchId: string; outcome: BatchOutcome }
   | { phase: "batch-unreadable"; batchId: string; message: string }
   | { phase: "batch-abandoned"; batchId: string; estimatedUsd: number; message: string }
+  | { phase: "screening"; count: number }
+  | { phase: "screened"; result: ScreenRunResult }
   | { phase: "pending"; count: number }
   | { phase: "submitted"; batchId: string; videoCount: number; estimatedUsd: number }
   | { phase: "batch-status"; batchId: string; status: string };
@@ -97,6 +105,11 @@ export type PollResult = {
   collected: Array<{ batchId: string; outcome: BatchOutcome }>;
   /** Batches given up on this run: unreadable for longer than STALE_BATCH_HOURS. */
   abandoned: Array<{ batchId: string; estimatedUsd: number }>;
+  /**
+   * [PR-35] What the gallring did before the work list was read. Null when it
+   * did not run: screening off, a dry run, or nothing new to screen.
+   */
+  screening: ScreenRunResult | null;
   pendingAnalysis: number;
   submitted: { batchId: string; videoCount: number; estimatedUsd: number } | null;
   /** Set when `submitted` is null — includes the dry-run estimate. */
@@ -109,9 +122,11 @@ export async function pollSources(options: PollOptions = {}): Promise<PollResult
   const {
     limit = 10,
     pendingLimit = 200,
+    screenLimit = 100,
     analyze = true,
     dryRun = false,
     wait = false,
+    screen = screeningEnabled(),
     model = DEFAULT_MODEL,
     onProgress = () => {},
   } = options;
@@ -167,6 +182,9 @@ export async function pollSources(options: PollOptions = {}): Promise<PollResult
   // `results` and `quotaExhausted`, giving up on a batch is something the run
   // did regardless of which branch it returns from.
   let abandoned: PollResult["abandoned"] = [];
+  // Same treatment as `abandoned`: money was spent and videos were judged, so
+  // it is reported from every exit rather than only from the one that submits.
+  let screening: ScreenRunResult | null = null;
 
   const finish = async (
     partial: Pick<PollResult, "collected" | "pendingAnalysis" | "submitted" | "skipped" | "waited">,
@@ -179,6 +197,7 @@ export async function pollSources(options: PollOptions = {}): Promise<PollResult
       sources: results,
       quotaExhausted,
       abandoned,
+      screening,
       spend: { before, after: await spendStatus() },
       ...partial,
     };
@@ -201,6 +220,27 @@ export async function pollSources(options: PollOptions = {}): Promise<PollResult
   const collected = reconciled.collected;
   const inFlight = reconciled.inFlight;
   abandoned = reconciled.abandoned;
+
+  // [PR-35] Gallringen, step 1. Runs before the work list is read, not after:
+  // a video culled here never reaches findPendingVideos, which is the whole
+  // saving. Skipped on a dry run because screening spends real money — a run
+  // that promises to submit nothing must also buy nothing.
+  if (screen && !dryRun) {
+    const unscreened = await findUnscreenedVideos(screenLimit);
+    if (unscreened.length > 0) {
+      onProgress({ phase: "screening", count: unscreened.length });
+      try {
+        screening = await screenVideos(unscreened, { model });
+        onProgress({ phase: "screened", result: screening });
+      } catch (err) {
+        // A cap that will not fund the screening will not fund the analysis
+        // either, so this run has nothing to do — but say so from the analysis
+        // path, which reports the cap properly. Swallowing it here and carrying
+        // on costs one unscreened batch, not correctness.
+        if (!(err instanceof SpendCapExceededError)) throw err;
+      }
+    }
+  }
 
   const pending = await findPendingVideos(pendingLimit);
   onProgress({ phase: "pending", count: pending.length });

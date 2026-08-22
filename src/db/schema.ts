@@ -365,6 +365,67 @@ export const outlines = mysqlTable(
 );
 
 // ---------------------------------------------------------------------------
+// screenings
+// ---------------------------------------------------------------------------
+
+/**
+ * [PR-35] Gallringen, step 1 — the cheap judgement that decides whether a video
+ * is worth a full analysis.
+ *
+ * A full analysis reads the whole transcript and costs ~$0.02 (PLAN.md §1). A
+ * screening reads only the free metadata already stored on `videos` — title,
+ * channel, duration, description, view/like/comment counts — and costs roughly
+ * a twentieth of that. Paying the twentieth on everything so the $0.02 is paid
+ * on a third of it is what buys back the budget for the videos that deserve a
+ * better model.
+ *
+ * Two things this table deliberately does not do:
+ *
+ * - **It stores a score, not a verdict.** Where the bar sits is a spend dial
+ *   (SCREEN_MIN_SCORE), and it moves. Storing the derived keep/skip would mean
+ *   re-screening — and re-paying for — the whole corpus every time the owner
+ *   changed their mind about how selective to be. With the score stored, moving
+ *   the bar re-decides every video already screened, for free.
+ * - **It is not append-only.** `analyses` keeps its history because each row was
+ *   paid for and is an asset in itself. A screening is a disposable opinion
+ *   about a video that has not been read yet; one current row per video is the
+ *   whole of what anyone will ever ask it. Re-screening replaces.
+ *
+ * `status: failed` is the load-bearing case: a screening that broke must be
+ * recorded so it is not retried forever, and it must never be read as "skip".
+ * The gallring fails open — see notCulled() in lib/screening/sql.ts.
+ */
+export const screenings = mysqlTable(
+  "screenings",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    videoId: int("video_id").notNull(),
+    status: mysqlEnum("status", ["ok", "failed"]).notNull().default("ok"),
+    /** 0–100, how well the metadata says this video is worth reading. Null on a failed row. */
+    score: smallint("score"),
+    /** One sentence, in the model's words, for why. Shown in the UI verbatim. */
+    reason: varchar("reason", { length: 512 }),
+    model: varchar("model", { length: 64 }).notNull(),
+    promptVersion: smallint("prompt_version").notNull().default(1),
+    /** Why it failed. Same 1024-char budget as analyses.error. */
+    error: varchar("error", { length: 1024 }),
+    /** Kept on a parse failure only — a screening's raw text is small and rarely useful twice. */
+    rawResponse: text("raw_response"),
+    inputTokens: int("input_tokens").notNull().default(0),
+    outputTokens: int("output_tokens").notNull().default(0),
+    costUsd: decimal("cost_usd", { precision: 10, scale: 6 }).notNull().default("0"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    // One current screening per video — the upsert in recordScreening depends
+    // on this, and it is what makes re-screening replace rather than accumulate.
+    uniqueIndex("screenings_video_id_idx").on(t.videoId),
+    // The work list is "screened below the bar"; the feed asks the same question.
+    index("screenings_score_idx").on(t.score),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // topics / video_topics
 // ---------------------------------------------------------------------------
 
@@ -520,6 +581,7 @@ export const videosRelations = relations(videos, ({ one, many }) => ({
   source: one(sources, { fields: [videos.sourceId], references: [sources.id] }),
   transcript: one(transcripts, { fields: [videos.id], references: [transcripts.videoId] }),
   analyses: many(analyses),
+  screening: one(screenings, { fields: [videos.id], references: [screenings.videoId] }),
   videoTopics: many(videoTopics),
   reads: many(videoReads),
 }));
@@ -536,6 +598,10 @@ export const transcriptsRelations = relations(transcripts, ({ one }) => ({
 export const analysesRelations = relations(analyses, ({ one, many }) => ({
   video: one(videos, { fields: [analyses.videoId], references: [videos.id] }),
   outlines: many(outlines),
+}));
+
+export const screeningsRelations = relations(screenings, ({ one }) => ({
+  video: one(videos, { fields: [screenings.videoId], references: [videos.id] }),
 }));
 
 export const outlinesRelations = relations(outlines, ({ one }) => ({
@@ -568,6 +634,8 @@ export type NewTranscript = typeof transcripts.$inferInsert;
 export type Analysis = typeof analyses.$inferSelect;
 export type NewAnalysis = typeof analyses.$inferInsert;
 export type Outline = typeof outlines.$inferSelect;
+export type Screening = typeof screenings.$inferSelect;
+export type NewScreening = typeof screenings.$inferInsert;
 export type NewOutline = typeof outlines.$inferInsert;
 export type Topic = typeof topics.$inferSelect;
 export type NewTopic = typeof topics.$inferInsert;

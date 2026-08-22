@@ -14,6 +14,8 @@ import {
 import { ANALYSIS_JSON_SCHEMA, ANALYSIS_SYSTEM_PROMPT, buildUserPrompt } from "./prompt";
 import { recordSpend } from "@/lib/spend";
 import { syncVideoTags } from "@/lib/tags";
+import { screenMinScore } from "@/lib/screening/policy";
+import { notCulled } from "@/lib/screening/sql";
 
 /**
  * The analysis pipeline (PLAN.md §5 row 06): transcript -> Haiku 4.5 ->
@@ -319,6 +321,12 @@ export async function findPendingVideosByIds(ids: number[]): Promise<Video[]> {
           select 1 from ${analyses}
           where ${analyses.videoId} = ${videos.id} and ${analyses.status} = 'ok'
         )`,
+        // [PR-35] and not culled by the gallring. Applied here as well as in
+        // findPendingVideos because this is the path a form posts ids into: a
+        // hand-edited request must not be able to buy an analysis the screen
+        // already declined to buy. The feed does not offer culled videos for
+        // selection, so nothing legitimate reaches this filter.
+        notCulled(screenMinScore()),
       ),
     )
     .orderBy(desc(videos.publishedAt));
@@ -336,6 +344,12 @@ export async function findPendingVideos(limit = 50): Promise<Video[]> {
           select 1 from ${analyses}
           where ${analyses.videoId} = ${videos.id} and ${analyses.status} = 'ok'
         )`,
+        // [PR-35] The gallring. A video screened below SCREEN_MIN_SCORE leaves
+        // the work list without being marked failed or unanalysable — it is
+        // still analysable, and one click on its page still buys the analysis.
+        // It simply stops being something the unattended poll run pays for,
+        // which is the entire saving.
+        notCulled(screenMinScore()),
       ),
     )
     .orderBy(desc(videos.publishedAt))

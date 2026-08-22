@@ -21,6 +21,7 @@
     "ingest": "tsx scripts/ingest.ts",
     "analyze": "tsx scripts/analyze.ts",
     "poll": "tsx scripts/poll-sources.ts",
+    "screen": "tsx scripts/screen.ts",
     "backfill": "tsx scripts/backfill.ts",
     "spend": "tsx scripts/spend.ts"
   },

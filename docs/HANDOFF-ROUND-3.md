@@ -38,7 +38,9 @@ on to:
 
 Round 3 added no schema. `docs/HANDOFF-BATCH-C.md` §3 is current: 0001–0006,
 `0005` rewrites role data, `0006` moves read state and **must run after 0005**.
-`npm run db:check` should report **11 tables**.
+`npm run db:check` should report **14 tables** as of PR-35. (Round 3 itself
+added no schema; migrations 0007/0008 came with PR-33/34 and 0009 with PR-35 —
+see `docs/PR-35-SCREENING.md`.)
 
 ## 3. A correction to `HANDOFF-BATCH-B.md` §7
 
