@@ -159,7 +159,12 @@ it was read back.
   `UnitType` in `lib/listen/units.ts`. A test asserts they match, which is the
   cheap version of the guarantee; a drift that the test somehow missed would
   surface as a database error on write, not a silent wrong row.
-- **Found, not fixed: `Pagination` linked every page back to `/`.** The
+- ~~**Found, not fixed: `Pagination` linked every page back to `/`.**~~
+  **Fixed by PR-38**, which passes `basePath` on the topic/entity shelf and adds
+  a test over `buildHref` — the bug lived entirely in that one function.
+  Original write-up, for the record:
+
+- **`Pagination` linked every page back to `/`.** The
   component hardcoded the feed's path, so pagination on `/topics/[kind]/[slug]`
   has been sending readers to the feed with the topic dropped since PR-34.
   PR-37 added a `basePath` prop (defaulting to `/`, so nothing changed for

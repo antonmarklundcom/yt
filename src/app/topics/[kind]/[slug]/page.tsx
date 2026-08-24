@@ -91,6 +91,11 @@ export default async function TagPage({
             totalPages={result.totalPages}
             searchParams={query}
             locale={locale}
+            // Without this the links resolved to the feed, carrying only ?page
+            // and ?sort — so page 2 of a shelf silently became page 2 of the
+            // whole corpus. `parsed` rather than `kind`: it is the validated
+            // value, and the slug is re-encoded because params arrive decoded.
+            basePath={`/topics/${parsed}/${encodeURIComponent(slug)}`}
           />
         </div>
       )}
