@@ -141,6 +141,24 @@ export const en = {
   "section.timeline": "Timeline",
   "section.gaps": "Gaps",
   "section.ideas": "Ideas",
+
+  // [PR-36] Listen mode. The unit labels are the singular names of the things
+  // in the analysis, because the readout numbers them ("Takeaway 3"); the
+  // section headings above stay plural.
+  "listen.title": "Listen",
+  "listen.play": "Play",
+  "listen.pause": "Pause",
+  "listen.previous": "Previous",
+  "listen.next": "Next",
+  "listen.restart": "Restart",
+  "listen.speed": "Speed",
+  "listen.position": "{position} of {total}",
+  "listen.unit.takeaway": "Takeaway",
+  "listen.unit.timeline": "Beat",
+  "listen.unit.gap": "Gap",
+  "listen.unit.idea": "Idea",
+  "listen.unsupported":
+    "This browser has no speech synthesis, so listen mode cannot read the analysis aloud.",
   "hook.technique": "Technique",
   "hook.first30s": "First 30 seconds",
   "hook.whyItWorks": "Why it works",
@@ -360,6 +378,21 @@ export const sv: Record<TranslationKey, string> = {
   "section.timeline": "Tidslinje",
   "section.gaps": "Luckor",
   "section.ideas": "Idéer",
+
+  "listen.title": "Lyssna",
+  "listen.play": "Spela",
+  "listen.pause": "Pausa",
+  "listen.previous": "Föregående",
+  "listen.next": "Nästa",
+  "listen.restart": "Börja om",
+  "listen.speed": "Hastighet",
+  "listen.position": "{position} av {total}",
+  "listen.unit.takeaway": "Lärdom",
+  "listen.unit.timeline": "Avsnitt",
+  "listen.unit.gap": "Lucka",
+  "listen.unit.idea": "Idé",
+  "listen.unsupported":
+    "Den här webbläsaren saknar talsyntes, så lyssnaläget kan inte läsa upp analysen.",
   "hook.technique": "Teknik",
   "hook.first30s": "Första 30 sekunderna",
   "hook.whyItWorks": "Varför det funkar",

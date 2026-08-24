@@ -14,7 +14,9 @@ import { isOwner } from "@/lib/auth/roles";
 import { requireUser } from "@/lib/auth/session";
 import { getLocale } from "@/lib/i18n/server";
 import { translator, type Locale, type TranslationKey } from "@/lib/i18n";
+import { analysisRowUnits } from "@/lib/listen/units";
 import { AnalyzeButton } from "@/components/AnalyzeButton";
+import { ListenPlayer } from "@/components/ListenPlayer";
 import { VideoReadControls } from "@/components/VideoReadControls";
 import { CaptionBadge } from "@/components/CaptionBadge";
 import { CopyAnalysisButton } from "@/components/CopyAnalysisButton";
@@ -260,6 +262,12 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
 
       {analysis && analysis.status === "ok" && (
         <div className="flex flex-col gap-6">
+          {/* [PR-36] Above the analysis, not below it: the choice between
+              reading and listening is made on arrival, and a play button found
+              after scrolling past the whole summary is a play button found too
+              late. Renders nothing when the analysis has no readable units. */}
+          <ListenPlayer units={analysisRowUnits(analysis)} />
+
           <div className="flex flex-wrap items-start justify-end gap-3">
             {estimate && analysis.model !== "claude-sonnet-5" && (
               <AnalyzeButton

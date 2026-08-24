@@ -310,6 +310,12 @@ schema change beyond §10's pre-approved list.
 | **34** | The analysis contract's one free change: `topics`, `entities` and `content_type` (migration 0008), plus the writers that finally fill `topics`/`video_topics` and the new `entities`/`video_entities`. Free only because no analysis had ever been paid for; that window is now closed. |
 | **35** | Gallringen, step 1: a metadata-only screening (migration 0009, `screenings`) scores every pending video before the poll run pays to analyse it, and videos below `SCREEN_MIN_SCORE` leave the work list that scheduled runs buy. Fails open, stores a score rather than a verdict, and never blocks a per-video analyse button. `docs/PR-35-SCREENING.md`. |
 
+### Round 5 — listening, and what you heard
+
+| PR | Scope |
+|---|---|
+| **36** | Listen mode: the stored analysis read aloud by the browser's own speech synthesis (Web Speech API), summary → takeaways → hook → timeline → gaps → ideas, at 1x–3x with a 2x default. Playback is addressed by *content unit* — which takeaway, which idea — not by a timestamp, because there is no audio file to have a timestamp in. **No paid TTS API.** A downloadable-audio tier is a deliberate future opt-in, not part of this. |
+
 ## 10. Rules for round-2 autonomous PRs
 
 Everything in §6 still applies, with these updates:
