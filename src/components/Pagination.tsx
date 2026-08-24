@@ -1,9 +1,9 @@
 import { translator, type Locale } from "@/lib/i18n";
 
-function buildHref(params: URLSearchParams, page: number): string {
+function buildHref(basePath: string, params: URLSearchParams, page: number): string {
   const next = new URLSearchParams(params);
   next.set("page", String(page));
-  return `/?${next.toString()}`;
+  return `${basePath}?${next.toString()}`;
 }
 
 export function Pagination({
@@ -11,11 +11,18 @@ export function Pagination({
   totalPages,
   searchParams,
   locale,
+  basePath = "/",
 }: {
   page: number;
   totalPages: number;
   searchParams: Record<string, string | undefined>;
   locale: Locale;
+  /**
+   * [PR-37] Which listing is being paged. Defaults to the feed, which is what
+   * every existing caller wants and is the behaviour this component had before
+   * the parameter existed.
+   */
+  basePath?: string;
 }) {
   if (totalPages <= 1) return null;
   const t = translator(locale);
@@ -28,7 +35,7 @@ export function Pagination({
     <nav className="flex items-center justify-center gap-4 pt-4 text-sm">
       {page > 1 ? (
         <a
-          href={buildHref(params, page - 1)}
+          href={buildHref(basePath, params, page - 1)}
           className="text-[var(--color-ink)] hover:text-[var(--color-accent)]"
         >
           {t("pagination.previous")}
@@ -41,7 +48,7 @@ export function Pagination({
       </span>
       {page < totalPages ? (
         <a
-          href={buildHref(params, page + 1)}
+          href={buildHref(basePath, params, page + 1)}
           className="text-[var(--color-ink)] hover:text-[var(--color-accent)]"
         >
           {t("pagination.next")}

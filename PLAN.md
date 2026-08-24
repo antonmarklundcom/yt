@@ -315,6 +315,7 @@ schema change beyond §10's pre-approved list.
 | PR | Scope |
 |---|---|
 | **36** | Listen mode: the stored analysis read aloud by the browser's own speech synthesis (Web Speech API), summary → takeaways → hook → timeline → gaps → ideas, at 1x–3x with a 2x default. Playback is addressed by *content unit* — which takeaway, which idea — not by a timestamp, because there is no audio file to have a timestamp in. **No paid TTS API.** A downloadable-audio tier is a deliberate future opt-in, not part of this. |
+| **37** | Marking: a star on an *individual content unit* — one takeaway, one idea, one timeline beat — rather than on the whole video. **Schema addition, flagged and not on §10's pre-approved list: `video_unit_marks`, migration 0010.** Shaped after PR-19/25's `video_reads` (per-user, keyed on the pair, no surrogate id) because it is the same kind of state one level finer. A "Mark this" button in listen mode marks whatever is being read; the same stars appear in the reading view; `/marks` lists every marked passage across the corpus and the feed gains a "Has marks" filter, both reusing PR-21's search form rather than bolting on a new one. |
 
 ## 10. Rules for round-2 autonomous PRs
 

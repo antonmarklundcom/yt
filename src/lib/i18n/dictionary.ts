@@ -48,6 +48,7 @@ export const en = {
   "filters.read.all": "All videos",
   "filters.read.unread": "Unread",
   "filters.read.pinned": "Pinned",
+  "filters.read.marked": "Has marks",
   "bulk.selected": "selected",
   "bulk.none": "Select videos to analyse them in one batch",
   "bulk.selectAll": "Select all analysable",
@@ -102,6 +103,7 @@ export const en = {
   "topics.videosTagged": "videos tagged",
   "topics.backToTopics": "All topics",
   "error.topics.title": "Could not load topics",
+  "error.marks.title": "Could not load marks",
   "notFound.topic.title": "No such topic",
   "notFound.topic.body":
     "Every topic here is written by an analysis, so one that does not exist was either mistyped or has been retagged away by a newer analysis.",
@@ -159,6 +161,24 @@ export const en = {
   "listen.unit.idea": "Idea",
   "listen.unsupported":
     "This browser has no speech synthesis, so listen mode cannot read the analysis aloud.",
+
+  // [PR-37] Marking. "Mark" rather than "star" or "favourite": the gesture is
+  // recording that a passage was interesting, and the star is only its glyph.
+  "nav.marks": "Marks",
+  "marks.title": "Marks",
+  "marks.countOne": "marked passage",
+  "marks.countMany": "marked passages",
+  "marks.mark": "Mark as interesting",
+  "marks.unmark": "Remove mark",
+  "marks.search": "Search marked passages…",
+  "marks.type.all": "All kinds",
+  "marks.empty.title": "Nothing marked yet",
+  "marks.empty.body":
+    "Star a takeaway, an idea or a timeline beat on any analysis — or press Mark while listening — and it collects here.",
+  "marks.noMatch.title": "No marks match this filter",
+  "marks.noMatch.body": "Try a different search term or another kind of passage.",
+  "listen.markHeard": "Mark this",
+  "listen.marked": "Marked",
   "hook.technique": "Technique",
   "hook.first30s": "First 30 seconds",
   "hook.whyItWorks": "Why it works",
@@ -289,6 +309,7 @@ export const sv: Record<TranslationKey, string> = {
   "filters.read.all": "Alla videor",
   "filters.read.unread": "Olästa",
   "filters.read.pinned": "Fästa",
+  "filters.read.marked": "Har markeringar",
   "bulk.selected": "valda",
   "bulk.none": "Välj videor för att analysera dem i en batch",
   "bulk.selectAll": "Välj alla analyserbara",
@@ -339,6 +360,7 @@ export const sv: Record<TranslationKey, string> = {
   "topics.videosTagged": "videor taggade",
   "topics.backToTopics": "Alla ämnen",
   "error.topics.title": "Kunde inte ladda ämnen",
+  "error.marks.title": "Kunde inte ladda markeringar",
   "notFound.topic.title": "Ämnet finns inte",
   "notFound.topic.body":
     "Varje ämne här är skrivet av en analys, så ett som inte finns är antingen felstavat eller borttaggat av en nyare analys.",
@@ -393,6 +415,22 @@ export const sv: Record<TranslationKey, string> = {
   "listen.unit.idea": "Idé",
   "listen.unsupported":
     "Den här webbläsaren saknar talsyntes, så lyssnaläget kan inte läsa upp analysen.",
+
+  "nav.marks": "Markeringar",
+  "marks.title": "Markeringar",
+  "marks.countOne": "markerat avsnitt",
+  "marks.countMany": "markerade avsnitt",
+  "marks.mark": "Markera som intressant",
+  "marks.unmark": "Ta bort markering",
+  "marks.search": "Sök i markerade avsnitt…",
+  "marks.type.all": "Alla sorter",
+  "marks.empty.title": "Inget markerat ännu",
+  "marks.empty.body":
+    "Stjärnmärk en lärdom, en idé eller ett avsnitt i en analys — eller tryck Markera medan du lyssnar — så samlas det här.",
+  "marks.noMatch.title": "Inga markeringar matchar filtret",
+  "marks.noMatch.body": "Prova ett annat sökord eller en annan sorts avsnitt.",
+  "listen.markHeard": "Markera",
+  "listen.marked": "Markerat",
   "hook.technique": "Teknik",
   "hook.first30s": "Första 30 sekunderna",
   "hook.whyItWorks": "Varför det funkar",
