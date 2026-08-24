@@ -1,6 +1,11 @@
 import { translator, type Locale } from "@/lib/i18n";
 
-function buildHref(basePath: string, params: URLSearchParams, page: number): string {
+/**
+ * Exported for the test alone. The bug this component shipped with (PR-09
+ * through PR-37: every listing's page links pointed at the feed) lived entirely
+ * in this function, so it is the part worth pinning down.
+ */
+export function buildHref(basePath: string, params: URLSearchParams, page: number): string {
   const next = new URLSearchParams(params);
   next.set("page", String(page));
   return `${basePath}?${next.toString()}`;
