@@ -10,6 +10,7 @@ import {
   videoEntities,
   videoReads,
   videoTopics,
+  videoUnitMarks,
   videos,
   type Analysis,
   type CaptionStatus,
@@ -23,7 +24,7 @@ export const DIGEST_PAGE_SIZE = 24;
  * flag. They are one control rather than two checkboxes because the useful
  * question is always "show me one of these", never "show me both at once".
  */
-export type ReadFilter = "unread" | "pinned";
+export type ReadFilter = "unread" | "pinned" | "marked";
 
 /** Sort orders offered by the feed. `published` stays the default. */
 export type DigestSort = "published" | "added" | "views";
@@ -95,7 +96,7 @@ export type DigestPage = {
 };
 
 const STATUS_VALUES: CaptionStatus[] = ["unknown", "available", "none", "failed"];
-const FILTER_VALUES: ReadFilter[] = ["unread", "pinned"];
+const FILTER_VALUES: ReadFilter[] = ["unread", "pinned", "marked"];
 const SORT_VALUES: DigestSort[] = ["published", "added", "views"];
 
 export function parseCaptionStatus(value: string | undefined): CaptionStatus | undefined {
@@ -138,6 +139,23 @@ function matchesQuery(q: string) {
         )
     )`,
   );
+}
+
+/**
+ * [PR-37] Videos with at least one starred content unit, for this user.
+ *
+ * EXISTS rather than a join, for the same reason as every other filter here: a
+ * video can carry many marks and a join would emit one feed row per mark,
+ * breaking the COUNT and the LIMIT/OFFSET paging.
+ *
+ * This is the coarse view — "which videos have something in them I flagged".
+ * /marks is the fine one, listing the passages themselves.
+ */
+function hasUnitMark(userId: number) {
+  return sql`exists (
+    select 1 from ${videoUnitMarks} m
+    where m.video_id = ${videos.id} and m.user_id = ${userId}
+  )`;
 }
 
 function taggedWithTopic(slug: string) {
@@ -201,6 +219,7 @@ export async function listDigestVideos(query: DigestQuery): Promise<DigestPage> 
     // exists only because the video is pinned.
     query.filter === "unread" ? isNull(videoReads.readAt) : undefined,
     query.filter === "pinned" ? eq(videoReads.pinned, true) : undefined,
+    query.filter === "marked" ? hasUnitMark(query.userId) : undefined,
     // [PR-34] EXISTS rather than a join: a video carries several topics, and
     // joining would emit one row per matching tag and break the SQL-side
     // pagination the feed depends on — the same reason analysisStatus is a

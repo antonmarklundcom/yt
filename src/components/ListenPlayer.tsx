@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useTranslator } from "@/lib/i18n/client";
 import type { TranslationKey } from "@/lib/i18n";
 import { clampRate, DEFAULT_RATE, formatRate, MAX_RATE, MIN_RATE, RATE_STEP } from "@/lib/listen/rate";
 import type { ContentUnit, UnitType } from "@/lib/listen/units";
+import { toggleUnitMark } from "@/lib/marks.actions";
 
 const RATE_STORAGE_KEY = "yt_listen_rate";
 
@@ -42,7 +43,16 @@ const BUTTON =
  * gives the position readout something to say, and what PR-37's marking points
  * at — the queue *is* the addressable unit list (lib/listen/units.ts).
  */
-export function ListenPlayer({ units }: { units: ContentUnit[] }) {
+export function ListenPlayer({
+  units,
+  videoId,
+  markedKeys,
+}: {
+  units: ContentUnit[];
+  videoId: number;
+  /** [PR-37] The units this user has already starred, as `${type}:${index}`. */
+  markedKeys: string[];
+}) {
   const t = useTranslator();
   // null until the effect runs: the server has no speechSynthesis, so deciding
   // this during render would produce two different trees and a hydration
@@ -59,6 +69,14 @@ export function ListenPlayer({ units }: { units: ContentUnit[] }) {
    */
   const [paused, setPaused] = useState(false);
   const [rate, setRate] = useState(DEFAULT_RATE);
+  /**
+   * [PR-37] Marks, held locally so the star flips on the click rather than
+   * after the round trip. The server action revalidates, which re-renders this
+   * component with fresh props — the effect below re-syncs from them, so an
+   * optimistic flip that the server rejected does not survive.
+   */
+  const [marked, setMarked] = useState<Set<string>>(() => new Set(markedKeys));
+  const [marking, startMarking] = useTransition();
 
   /**
    * Bumped on every deliberate stop. An utterance's `onend` fires after
@@ -78,6 +96,13 @@ export function ListenPlayer({ units }: { units: ContentUnit[] }) {
       // Private-mode Safari throws on localStorage. The default rate is fine.
     }
   }, []);
+
+  // Keyed on the joined list rather than the array: props hand a new array
+  // identity every render, and depending on that would re-run on every tick.
+  const markedSignature = markedKeys.join(",");
+  useEffect(() => {
+    setMarked(new Set(markedSignature ? markedSignature.split(",") : []));
+  }, [markedSignature]);
 
   const stop = useCallback(() => {
     runRef.current += 1;
@@ -195,6 +220,30 @@ export function ListenPlayer({ units }: { units: ContentUnit[] }) {
     if (playing || paused) speakFrom(cursor, value);
   }
 
+  /**
+   * "Mark the last thing I heard" — one click, no aiming.
+   *
+   * The unit being read *is* the cursor, which is the whole reason PR-36 tracks
+   * a content unit instead of an audio position: there is nothing to scrub back
+   * to and nothing to guess at. Playback is not interrupted; marking a passage
+   * you are still hearing should not stop you hearing it.
+   */
+  function toggleCurrentMark(unit: ContentUnit) {
+    const isMarked = marked.has(unit.key);
+    setMarked((prev) => {
+      const next = new Set(prev);
+      if (isMarked) next.delete(unit.key);
+      else next.add(unit.key);
+      return next;
+    });
+    startMarking(async () => {
+      await toggleUnitMark(
+        { videoId, unitType: unit.type, unitIndex: unit.index, unitText: unit.text },
+        isMarked,
+      );
+    });
+  }
+
   if (units.length === 0) return null;
 
   // Clamped rather than indexed raw: the cursor is state and `units` is a prop,
@@ -259,6 +308,19 @@ export function ListenPlayer({ units }: { units: ContentUnit[] }) {
               disabled={!supported}
             >
               {t("listen.restart")}
+            </button>
+
+            <button
+              type="button"
+              className={`${BUTTON} ${
+                marked.has(current.key) ? "border-[var(--color-warn)] text-[var(--color-warn)]" : ""
+              }`}
+              onClick={() => toggleCurrentMark(current)}
+              disabled={marking}
+              aria-pressed={marked.has(current.key)}
+            >
+              {marked.has(current.key) ? "★" : "☆"}{" "}
+              {t(marked.has(current.key) ? "listen.marked" : "listen.markHeard")}
             </button>
 
             <label

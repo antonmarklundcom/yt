@@ -14,6 +14,7 @@ const FILTER_OPTIONS: { value: ReadFilter | ""; key: TranslationKey }[] = [
   { value: "", key: "filters.read.all" },
   { value: "unread", key: "filters.read.unread" },
   { value: "pinned", key: "filters.read.pinned" },
+  { value: "marked", key: "filters.read.marked" },
 ];
 
 const SORT_OPTIONS: { value: DigestSort; key: TranslationKey }[] = [

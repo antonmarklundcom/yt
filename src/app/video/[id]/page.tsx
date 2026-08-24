@@ -14,9 +14,12 @@ import { isOwner } from "@/lib/auth/roles";
 import { requireUser } from "@/lib/auth/session";
 import { getLocale } from "@/lib/i18n/server";
 import { translator, type Locale, type TranslationKey } from "@/lib/i18n";
-import { analysisRowUnits } from "@/lib/listen/units";
+import type { UnitType } from "@/lib/listen/units";
+import { analysisRowUnits, unitKey } from "@/lib/listen/units";
+import { markedUnitKeys } from "@/lib/marks";
 import { AnalyzeButton } from "@/components/AnalyzeButton";
 import { ListenPlayer } from "@/components/ListenPlayer";
+import { UnitMarkButton } from "@/components/UnitMarkButton";
 import { VideoReadControls } from "@/components/VideoReadControls";
 import { CaptionBadge } from "@/components/CaptionBadge";
 import { CopyAnalysisButton } from "@/components/CopyAnalysisButton";
@@ -118,6 +121,29 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
       ? await db.select().from(outlines).where(eq(outlines.analysisId, analysis.id))
       : [];
   const outlineByIdeaIndex = new Map(outlineRows.map((o) => [o.ideaIndex, o]));
+
+  // [PR-37] Which units this user has starred. Read for every analysis, not
+  // only while listening: a mark made with the ear has to be visible to the eye.
+  const units = analysisRowUnits(analysis);
+  const marked = analysis ? await markedUnitKeys(video.id, user.id) : new Set<string>();
+  // Every unit's current text, by address — what a star stores as its snapshot.
+  const unitText = new Map(units.map((u) => [u.key, u.text]));
+  const star = (unitType: UnitType, unitIndex: number) => {
+    const key = unitKey(unitType, unitIndex);
+    const text = unitText.get(key);
+    // No text means nothing to mark: the section is empty and is not a unit.
+    if (text === undefined) return null;
+    return (
+      <UnitMarkButton
+        videoId={video.id}
+        unitType={unitType}
+        unitIndex={unitIndex}
+        unitText={text}
+        marked={marked.has(key)}
+        locale={locale}
+      />
+    );
+  };
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-10">
@@ -266,7 +292,7 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
               reading and listening is made on arrival, and a play button found
               after scrolling past the whole summary is a play button found too
               late. Renders nothing when the analysis has no readable units. */}
-          <ListenPlayer units={analysisRowUnits(analysis)} />
+          <ListenPlayer units={units} videoId={video.id} markedKeys={[...marked]} />
 
           <div className="flex flex-wrap items-start justify-end gap-3">
             {estimate && analysis.model !== "claude-sonnet-5" && (
@@ -306,12 +332,15 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
           )}
 
           {analysis.summary && (
-            <Section titleKey="section.summary" locale={locale}>
+            <Section titleKey="section.summary" locale={locale} action={star("summary", 0)}>
               <p className="text-sm leading-relaxed text-[var(--color-ink)]">{analysis.summary}</p>
               {!!analysis.takeaways?.length && (
-                <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-[var(--color-ink-muted)]">
-                  {analysis.takeaways.map((t, i) => (
-                    <li key={i}>{t}</li>
+                <ul className="mt-3 space-y-1 text-sm text-[var(--color-ink-muted)]">
+                  {analysis.takeaways.map((takeaway, i) => (
+                    <li key={i} className="flex items-start gap-2">
+                      {star("takeaway", i) ?? <span className="w-6 shrink-0" />}
+                      <span>{takeaway}</span>
+                    </li>
                   ))}
                 </ul>
               )}
@@ -319,7 +348,7 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
           )}
 
           {analysis.hookBreakdown && (
-            <Section titleKey="section.hook" locale={locale}>
+            <Section titleKey="section.hook" locale={locale} action={star("hook", 0)}>
               <dl className="grid grid-cols-1 gap-3 text-sm">
                 <Field label={t("hook.technique")} value={analysis.hookBreakdown.technique} />
                 <Field label={t("hook.first30s")} value={analysis.hookBreakdown.first_30s} />
@@ -333,6 +362,7 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
               <ol className="flex flex-col gap-3">
                 {analysis.timeline.map((entry, i) => (
                   <li key={i} className="flex gap-3 text-sm">
+                    {star("timeline", i) ?? <span className="w-6 shrink-0" />}
                     <span className="w-16 shrink-0 font-mono text-[var(--color-accent)]">
                       {entry.ts}
                     </span>
@@ -350,11 +380,14 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
             <Section titleKey="section.gaps" locale={locale}>
               <ul className="flex flex-col gap-3">
                 {analysis.gaps.map((g, i) => (
-                  <li key={i} className="text-sm">
-                    <p className="text-[var(--color-ink)]">{g.gap}</p>
-                    <p className="text-[var(--color-ink-muted)]">
-                      {t("gaps.counterAngle")}: {g.counter_angle}
-                    </p>
+                  <li key={i} className="flex items-start gap-2 text-sm">
+                    {star("gap", i) ?? <span className="w-6 shrink-0" />}
+                    <div>
+                      <p className="text-[var(--color-ink)]">{g.gap}</p>
+                      <p className="text-[var(--color-ink-muted)]">
+                        {t("gaps.counterAngle")}: {g.counter_angle}
+                      </p>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -368,7 +401,10 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
                   const row = outlineByIdeaIndex.get(i);
                   return (
                     <li key={i} className="surface-border rounded-[var(--radius-sm)] p-3">
-                      <p className="font-medium text-[var(--color-ink)]">{idea.title}</p>
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="font-medium text-[var(--color-ink)]">{idea.title}</p>
+                        {star("idea", i)}
+                      </div>
                       <p className="mt-1 text-sm text-[var(--color-ink-muted)]">{idea.premise}</p>
                       <p className="mt-1 text-xs text-[var(--color-ink-muted)]">
                         {t("ideas.whyNow")}: {idea.why_now}
@@ -400,17 +436,23 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
 function Section({
   titleKey,
   locale,
+  action,
   children,
 }: {
   titleKey: TranslationKey;
   locale: Locale;
+  /** [PR-37] The star, for the sections that are themselves one unit. */
+  action?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <section className="surface-border surface-card p-5">
-      <h2 className="mb-3 text-xs font-medium tracking-widest text-[var(--color-accent)] uppercase">
-        {translator(locale)(titleKey)}
-      </h2>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h2 className="text-xs font-medium tracking-widest text-[var(--color-accent)] uppercase">
+          {translator(locale)(titleKey)}
+        </h2>
+        {action}
+      </div>
       {children}
     </section>
   );

@@ -539,6 +539,71 @@ export const videoReads = mysqlTable(
 );
 
 // ---------------------------------------------------------------------------
+// video_unit_marks
+// ---------------------------------------------------------------------------
+
+/**
+ * [PR-37] "This bit was interesting" — at the level of one takeaway, one idea,
+ * one timeline beat, rather than one video.
+ *
+ * SCHEMA ADDITION, FLAGGED (PLAN.md §6/§10). Not on §10's pre-approved list:
+ * that list ends at PR-25's `video_reads`. This is a new table, additive only,
+ * touching no existing column and no §4 contract field. Migration 0010.
+ *
+ * Deliberately shaped after `video_reads` (PR-19/25) rather than inventing a
+ * second idiom for the same thing: per-user state about a video, keyed on the
+ * pair, no surrogate id, no foreign keys (schema-wide convention — see the
+ * relations note below). The difference is only that the address is finer.
+ *
+ * `pinned` on `video_reads` already answers "come back to this video". It
+ * cannot answer "come back to the third takeaway", and by the time an analysis
+ * has thirty units, the video is not the useful unit of interest — which is the
+ * same argument PR-25 made one level up.
+ *
+ * The address is (unit_type, unit_index), produced by lib/listen/units.ts and
+ * shared with PR-36's player. Singleton sections (`summary`, `hook`) still
+ * carry an index of 0: a uniform four-column key is one primary key instead of
+ * two, at the cost of one column that is always zero.
+ *
+ * `unit_text` is a snapshot, and the denormalisation is the point. Re-analysing
+ * a video rewrites its `analyses` JSON — takeaways get reworded, and the list
+ * can get shorter — so a mark that stored only an address would silently come
+ * to point at different text, or at nothing. Storing what was actually marked
+ * means the marks page renders in one query and keeps saying what it said when
+ * the star was pressed. Where the current analysis still has a unit at that
+ * address, the reading view shows the live text; the snapshot is what survives
+ * when it does not.
+ */
+export const videoUnitMarks = mysqlTable(
+  "video_unit_marks",
+  {
+    videoId: int("video_id").notNull(),
+    userId: int("user_id").notNull(),
+    /** Mirrors UnitType in lib/listen/units.ts. The two must not drift. */
+    unitType: mysqlEnum("unit_type", [
+      "summary",
+      "takeaway",
+      "hook",
+      "timeline",
+      "gap",
+      "idea",
+    ]).notNull(),
+    unitIndex: int("unit_index").notNull(),
+    /** What was marked, as it read at the time. Truncated on write, not rejected. */
+    unitText: varchar("unit_text", { length: 1024 }).notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    // video_id leads for the same reason it does on video_reads: the video page
+    // and the feed both join video → marks, and the PK has to serve that join.
+    primaryKey({ columns: [t.videoId, t.userId, t.unitType, t.unitIndex] }),
+    // The /marks page is "everything I marked, newest first" — one user's rows
+    // in time order, which the PK above cannot serve.
+    index("video_unit_marks_user_created_idx").on(t.userId, t.createdAt),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // spend_log
 // ---------------------------------------------------------------------------
 
@@ -584,6 +649,12 @@ export const videosRelations = relations(videos, ({ one, many }) => ({
   screening: one(screenings, { fields: [videos.id], references: [screenings.videoId] }),
   videoTopics: many(videoTopics),
   reads: many(videoReads),
+  unitMarks: many(videoUnitMarks),
+}));
+
+export const videoUnitMarksRelations = relations(videoUnitMarks, ({ one }) => ({
+  video: one(videos, { fields: [videoUnitMarks.videoId], references: [videos.id] }),
+  user: one(users, { fields: [videoUnitMarks.userId], references: [users.id] }),
 }));
 
 export const videoReadsRelations = relations(videoReads, ({ one }) => ({
@@ -629,6 +700,8 @@ export type Video = typeof videos.$inferSelect;
 export type NewVideo = typeof videos.$inferInsert;
 export type VideoRead = typeof videoReads.$inferSelect;
 export type NewVideoRead = typeof videoReads.$inferInsert;
+export type VideoUnitMark = typeof videoUnitMarks.$inferSelect;
+export type NewVideoUnitMark = typeof videoUnitMarks.$inferInsert;
 export type Transcript = typeof transcripts.$inferSelect;
 export type NewTranscript = typeof transcripts.$inferInsert;
 export type Analysis = typeof analyses.$inferSelect;
