@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { users } from "@/db/schema";
+import { isLoginBlocked, loginKey, recordLoginFailure, resetLoginFailures } from "./login-throttle";
 import { verifyPassword } from "./password";
 import { endSession, startSession } from "./session";
 
@@ -22,9 +23,18 @@ export async function login(_prev: LoginResult | null, formData: FormData): Prom
 
   if (!email || !password) return { ok: false, error: "Enter an email and a password." };
 
+  // Too many recent failures for this account: same generic error, even with the right
+  // password. Keyed on the email, not the IP (spoofable / shared behind a proxy).
+  const key = loginKey(email);
+  if (isLoginBlocked(key)) return { ok: false, error: "Wrong email or password." };
+
   const [user] = await db.select().from(users).where(eq(users.email, email)).limit(1);
   const valid = await verifyPassword(password, user?.passwordHash ?? null);
-  if (!user || !valid) return { ok: false, error: "Wrong email or password." };
+  if (!user || !valid) {
+    recordLoginFailure(key);
+    return { ok: false, error: "Wrong email or password." };
+  }
+  resetLoginFailures(key);
 
   await startSession(user.id);
   redirect("/");
